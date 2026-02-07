@@ -1,0 +1,28 @@
+diff --git a/src/browser.c b/src/browser.c
+index 6a6daf1..3576a7d 100644
+--- a/src/browser.c
++++ b/src/browser.c
+@@ -1327,23 +1327,6 @@ et_browser_load_file_list (EtBrowser *self,
+         gchar *track;
+         gchar *disc;
+ 
+-        // Change background color when changing directory (the first row must not be changed)
+-        if (gtk_tree_model_iter_n_children(GTK_TREE_MODEL(priv->file_model), NULL) > 0)
+-        {
+-            gchar *dir1_utf8;
+-            gchar *dir2_utf8;
+-            const gchar *previous_filename_utf8 = ((File_Name *)((ET_File *)l->prev->data)->FileNameCur->data)->value_utf8;
+-
+-            dir1_utf8 = g_path_get_dirname(previous_filename_utf8);
+-            dir2_utf8 = g_path_get_dirname(current_filename_utf8);
+-
+-            if (g_utf8_collate(dir1_utf8, dir2_utf8) != 0)
+-                activate_bg_color = !activate_bg_color;
+-
+-            g_free(dir1_utf8);
+-            g_free(dir2_utf8);
+-        }
+-
+         /* File list displays the current filename (name on disc) and tag
+          * fields. */
+         track = g_strconcat(FileTag->track ? FileTag->track : "",FileTag->track_total ? "/" : NULL,FileTag->track_total,NULL);

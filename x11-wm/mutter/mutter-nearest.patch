@@ -1,0 +1,43 @@
+diff --git a/src/backends/meta-screen-cast-stream-src.c b/src/backends/meta-screen-cast-stream-src.c
+index 7768baf82d..bce4ed3484 100644
+--- a/src/backends/meta-screen-cast-stream-src.c
++++ b/src/backends/meta-screen-cast-stream-src.c
+@@ -407,8 +407,8 @@ draw_cursor_sprite_via_offscreen (MetaScreenCastStreamSrc  *src,
+   pipeline = cogl_pipeline_new (cogl_context);
+   cogl_pipeline_set_layer_texture (pipeline, 0, cursor_texture);
+   cogl_pipeline_set_layer_filters (pipeline, 0,
+-                                   COGL_PIPELINE_FILTER_LINEAR,
+-                                   COGL_PIPELINE_FILTER_LINEAR);
++                                   COGL_PIPELINE_FILTER_NEAREST,
++                                   COGL_PIPELINE_FILTER_NEAREST);
+ 
+   cogl_pipeline_set_layer_matrix (pipeline, 0, matrix);
+ 
+diff --git a/src/backends/meta-screen-cast-window-stream-src.c b/src/backends/meta-screen-cast-window-stream-src.c
+index 7140a7887f..8e8de33c15 100644
+--- a/src/backends/meta-screen-cast-window-stream-src.c
++++ b/src/backends/meta-screen-cast-window-stream-src.c
+@@ -297,8 +297,8 @@ maybe_blit_cursor_sprite (MetaScreenCastWindowStreamSrc *window_src,
+   pipeline = cogl_pipeline_new (cogl_context);
+   cogl_pipeline_set_layer_texture (pipeline, 0, cursor_texture);
+   cogl_pipeline_set_layer_filters (pipeline, 0,
+-                                   COGL_PIPELINE_FILTER_LINEAR,
+-                                   COGL_PIPELINE_FILTER_LINEAR);
++                                   COGL_PIPELINE_FILTER_NEAREST,
++                                   COGL_PIPELINE_FILTER_NEAREST);
+ 
+   graphene_matrix_init_identity (&matrix);
+   mtk_compute_viewport_matrix (&matrix,
+diff --git a/src/compositor/meta-shaped-texture.c b/src/compositor/meta-shaped-texture.c
+index 2d1d6524ee..777961a880 100644
+--- a/src/compositor/meta-shaped-texture.c
++++ b/src/compositor/meta-shaped-texture.c
+@@ -873,7 +873,7 @@ do_paint_content (MetaShapedTexture   *stex,
+   else
+     {
+       min_filter = COGL_PIPELINE_FILTER_LINEAR;
+-      mag_filter = COGL_PIPELINE_FILTER_LINEAR;
++      mag_filter = COGL_PIPELINE_FILTER_NEAREST;
+ 
+       /* If we're painting a texture below half its native resolution
+        * then mipmapping is required to avoid aliasing. If it's above

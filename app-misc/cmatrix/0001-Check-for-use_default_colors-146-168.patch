@@ -1,0 +1,30 @@
+From ac78ef9b78948d4da162795fb4043e874dfd1ee8 Mon Sep 17 00:00:00 2001
+From: Nicolas Bratoveanu <70487229+Nikoof@users.noreply.github.com>
+Date: Wed, 1 Mar 2023 15:44:42 +0200
+Subject: [PATCH] Check for use_default_colors (#146) (#168)
+
+---
+ CMakeLists.txt | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6e672b7..fba6fed 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -57,6 +57,13 @@ find_package(Curses)
+ include_directories(${CURSES_INCLUDE_DIR})
+ add_definitions(-DHAVE_NCURSES_H)
+ 
++include(CheckSymbolExists)
++list(APPEND CMAKE_REQUIRED_LIBRARIES ncurses)
++check_symbol_exists(use_default_colors "ncurses.h" HAVE_USE_DEFAULT_COLORS)
++if (HAVE_USE_DEFAULT_COLORS)
++    add_definitions(-DHAVE_USE_DEFAULT_COLORS)
++endif()
++
+ add_executable(cmatrix cmatrix.c)
+ 
+ target_link_libraries(cmatrix ${CURSES_LIBRARIES})
+-- 
+2.51.2
+

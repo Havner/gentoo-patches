@@ -1,0 +1,13 @@
+diff --git a/localedata/locales/iso14651_t1_common b/localedata/locales/iso14651_t1_common
+index 227400cc4e..5407677718 100644
+--- a/localedata/locales/iso14651_t1_common
++++ b/localedata/locales/iso14651_t1_common
+@@ -55307,7 +55307,7 @@ order_start <SPECIAL>;forward;backward;forward;forward,position
+ <U002B> IGNORE;IGNORE;IGNORE;<U002B> % PLUS SIGN
+ <U002C> IGNORE;IGNORE;IGNORE;<U002C> % COMMA
+ <U002D> IGNORE;IGNORE;IGNORE;<U002D> % HYPHEN-MINUS
+-<U002E> IGNORE;IGNORE;IGNORE;<U002E> % FULL STOP
++<U002E> <RES-1>;IGNORE;IGNORE;<U002E> % FULL STOP
+ <U002F> IGNORE;IGNORE;IGNORE;<U002F> % SOLIDUS
+ <U003A> IGNORE;IGNORE;IGNORE;<U003A> % COLON
+ <U003B> IGNORE;IGNORE;IGNORE;<U003B> % SEMICOLON
