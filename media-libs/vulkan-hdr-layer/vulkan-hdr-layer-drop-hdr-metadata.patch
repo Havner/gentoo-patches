@@ -1,0 +1,83 @@
+diff --git a/src/VkLayer_hdr_wsi.cpp b/src/VkLayer_hdr_wsi.cpp
+index d533f4f..aa3f2ee 100644
+--- a/src/VkLayer_hdr_wsi.cpp
++++ b/src/VkLayer_hdr_wsi.cpp
+@@ -415,39 +415,6 @@ public:
+         pDispatch->DestroySurfaceKHR(instance, surface, pAllocator);
+     }
+ 
+-    static VkResult
+-    EnumerateDeviceExtensionProperties(
+-        const vkroots::VkInstanceDispatch *pDispatch,
+-        VkPhysicalDevice physicalDevice,
+-        const char *pLayerName,
+-        uint32_t *pPropertyCount,
+-        VkExtensionProperties *pProperties)
+-    {
+-        static constexpr std::array<VkExtensionProperties, 1> s_LayerExposedExts = {{
+-                {
+-                    VK_EXT_HDR_METADATA_EXTENSION_NAME,
+-                    VK_EXT_HDR_METADATA_SPEC_VERSION
+-                },
+-            }
+-        };
+-
+-        if (pLayerName) {
+-            if (pLayerName == "VK_LAYER_hdr_wsi"sv) {
+-                return vkroots::helpers::array(s_LayerExposedExts, pPropertyCount, pProperties);
+-            } else {
+-                return pDispatch->EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
+-            }
+-        }
+-
+-        return vkroots::helpers::append(
+-                   pDispatch->EnumerateDeviceExtensionProperties,
+-                   s_LayerExposedExts,
+-                   pPropertyCount,
+-                   pProperties,
+-                   physicalDevice,
+-                   pLayerName);
+-    }
+-
+ private:
+     static constexpr struct frog_color_managed_surface_listener color_surface_interface_listener {
+       .preferred_metadata = [](void *data,
+@@ -671,38 +638,6 @@ public:
+         return result;
+     }
+ 
+-    static void
+-    SetHdrMetadataEXT(
+-        const vkroots::VkDeviceDispatch *pDispatch,
+-        VkDevice device,
+-        uint32_t swapchainCount,
+-        const VkSwapchainKHR *pSwapchains,
+-        const VkHdrMetadataEXT *pMetadata)
+-    {
+-        for (uint32_t i = 0; i < swapchainCount; i++) {
+-            auto hdrSwapchain = HdrSwapchain::get(pSwapchains[i]);
+-            if (!hdrSwapchain) {
+-                fprintf(stderr, "[HDR Layer] SetHdrMetadataEXT: Swapchain %u does not support HDR.\n", i);
+-                continue;
+-            }
+-
+-            auto hdrSurface = HdrSurface::get(hdrSwapchain->surface);
+-            if (!hdrSurface) {
+-                fprintf(stderr, "[HDR Layer] SetHdrMetadataEXT: Surface for swapchain %u was already destroyed. (App use after free).\n", i);
+-                abort();
+-            }
+-
+-            const VkHdrMetadataEXT &metadata = pMetadata[i];
+-
+-            fprintf(stderr, "[HDR Layer] VkHdrMetadataEXT: mastering luminance min %f nits, max %f nits\n", metadata.minLuminance, metadata.maxLuminance);
+-            fprintf(stderr, "[HDR Layer] VkHdrMetadataEXT: maxContentLightLevel %f nits\n", metadata.maxContentLightLevel);
+-            fprintf(stderr, "[HDR Layer] VkHdrMetadataEXT: maxFrameAverageLightLevel %f nits\n", metadata.maxFrameAverageLightLevel);
+-
+-            hdrSwapchain->metadata = metadata;
+-            hdrSwapchain->desc_dirty = true;
+-        }
+-    }
+-
+     static VkResult QueuePresentKHR(
+         const vkroots::VkDeviceDispatch *pDispatch,
+         VkQueue queue,
