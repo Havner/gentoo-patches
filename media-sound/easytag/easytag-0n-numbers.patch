@@ -1,0 +1,25 @@
+diff --git a/src/scan_dialog.c b/src/scan_dialog.c
+index ac1f74d..d317fe8 100644
+--- a/src/scan_dialog.c
++++ b/src/scan_dialog.c
+@@ -29,6 +29,7 @@
+ #include "application_window.h"
+ #include "easytag.h"
+ #include "enums.h"
++#include "glib.h"
+ #include "preferences_dialog.h"
+ #include "scan.h"
+ #include "setting.h"
+@@ -933,7 +934,11 @@ et_scan_generate_new_filename_from_mask (const ET_File *ETFile,
+         if (source && !et_str_empty (*source))
+         {
+             mask_item->type = FIELD;
+-            mask_item->string = g_strdup(*source);
++			if ((tmp[1] == 'n' || tmp[1] == 'l') && strlen(*source) == 1) {
++				mask_item->string = g_strdup_printf("0%s", *source);
++			} else {
++				mask_item->string = g_strdup(*source);
++			}
+ 
+             // Replace invalid characters for this field
+             /* Do not replace characters in a playlist information field. */
