@@ -1,3 +1,4 @@
 [submodule "sys-kernel/gentoo-sources"]
 	path = sys-kernel/gentoo-sources
 	url = https://github.com/t2linux/linux-t2-patches.git
+	branch = 6.18
