@@ -1,0 +1,9 @@
+diff '--color=auto' -ur work.orig/opt/brave.com/brave/brave-browser work/opt/brave.com/brave/brave-browser
+--- work.orig/opt/brave.com/brave/brave-browser	2026-05-02 22:04:27.943414195 +0200
++++ work/opt/brave.com/brave/brave-browser	2026-05-02 22:05:00.407461216 +0200
+@@ -37,4 +37,4 @@
+ exec 2> >(exec cat >&2)
+ 
+ # Note: exec -a below is a bashism.
+-"$HERE/brave" "$@" || true
++"$HERE/brave" --enable-features=TouchpadOverscrollHistoryNavigation "$@" || true
