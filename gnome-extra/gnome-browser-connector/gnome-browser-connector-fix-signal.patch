@@ -1,0 +1,16 @@
+--- a/gnome_browser_connector/application.py
++++ b/gnome_browser_connector/application.py
+@@ -41,7 +41,12 @@ class Application:
+             "Run as browser messaging host"
+         )
+ 
+-        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self.on_sigint, None)
++        try:
++            # Newer GLib / GI may not expose unix_signal_add
++            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self.on_sigint, None)
++        except AttributeError:
++            # Fallback to Python signal handling
++            signal.signal(signal.SIGINT, lambda *args: self.on_sigint(None))
+ 
+         self._stdin: GLib.IOChannel = GLib.IOChannel.unix_new(sys.stdin.fileno())
+         self._stdin.set_encoding(None)
