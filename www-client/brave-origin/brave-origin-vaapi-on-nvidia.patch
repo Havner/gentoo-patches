@@ -1,0 +1,9 @@
+diff '--color=auto' -ur work.orig/opt/brave.com/brave-origin/brave-origin work/opt/brave.com/brave-origin/brave-origin
+--- work.orig/opt/brave.com/brave-origin/brave-origin	2026-06-19 15:03:54.325866606 +0200
++++ work/opt/brave.com/brave-origin/brave-origin	2026-06-19 15:04:32.309377157 +0200
+@@ -27,4 +27,4 @@
+ exec 2> >(exec cat >&2)
+ 
+ # Note: exec -a below is a bashism.
+-"$HERE/brave" "$@" || true
++"$HERE/brave" --enable-features=VaapiOnNvidiaGPUs "$@" || true
