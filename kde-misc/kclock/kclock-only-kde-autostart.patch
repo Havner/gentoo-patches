@@ -1,0 +1,8 @@
+diff '--color=auto' -urN kclock-26.04.2.orig/org.kde.kclockd-autostart.desktop kclock-26.04.2/org.kde.kclockd-autostart.desktop
+--- kclock-26.04.2.orig/org.kde.kclockd-autostart.desktop	2026-05-31 17:17:46.000000000 +0200
++++ kclock-26.04.2/org.kde.kclockd-autostart.desktop	2026-07-01 10:35:03.302329407 +0200
+@@ -98,3 +98,4 @@
+ Type=Application
+ Terminal=false
+ Categories=Qt;KDE;Utility;
++OnlyShowIn=KDE;
