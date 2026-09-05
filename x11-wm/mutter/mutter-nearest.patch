@@ -1,43 +1,117 @@
-diff --git a/src/backends/meta-screen-cast-stream-src.c b/src/backends/meta-screen-cast-stream-src.c
-index 7768baf82d..bce4ed3484 100644
---- a/src/backends/meta-screen-cast-stream-src.c
-+++ b/src/backends/meta-screen-cast-stream-src.c
-@@ -407,8 +407,8 @@ draw_cursor_sprite_via_offscreen (MetaScreenCastStreamSrc  *src,
-   pipeline = cogl_pipeline_new (cogl_context);
-   cogl_pipeline_set_layer_texture (pipeline, 0, cursor_texture);
-   cogl_pipeline_set_layer_filters (pipeline, 0,
--                                   COGL_PIPELINE_FILTER_LINEAR,
--                                   COGL_PIPELINE_FILTER_LINEAR);
-+                                   COGL_PIPELINE_FILTER_NEAREST,
-+                                   COGL_PIPELINE_FILTER_NEAREST);
+diff --git a/data/org.gnome.mutter.gschema.xml.in b/data/org.gnome.mutter.gschema.xml.in
+index 3a8fd2bc31..decd1eff21 100644
+--- a/data/org.gnome.mutter.gschema.xml.in
++++ b/data/org.gnome.mutter.gschema.xml.in
+@@ -102,6 +102,17 @@
+       </description>
+     </key>
  
-   cogl_pipeline_set_layer_matrix (pipeline, 0, matrix);
- 
-diff --git a/src/backends/meta-screen-cast-window-stream-src.c b/src/backends/meta-screen-cast-window-stream-src.c
-index 7140a7887f..8e8de33c15 100644
---- a/src/backends/meta-screen-cast-window-stream-src.c
-+++ b/src/backends/meta-screen-cast-window-stream-src.c
-@@ -297,8 +297,8 @@ maybe_blit_cursor_sprite (MetaScreenCastWindowStreamSrc *window_src,
-   pipeline = cogl_pipeline_new (cogl_context);
-   cogl_pipeline_set_layer_texture (pipeline, 0, cursor_texture);
-   cogl_pipeline_set_layer_filters (pipeline, 0,
--                                   COGL_PIPELINE_FILTER_LINEAR,
--                                   COGL_PIPELINE_FILTER_LINEAR);
-+                                   COGL_PIPELINE_FILTER_NEAREST,
-+                                   COGL_PIPELINE_FILTER_NEAREST);
- 
-   graphene_matrix_init_identity (&matrix);
-   mtk_compute_viewport_matrix (&matrix,
++    <key name="nearest-scaling-for-legacy" type="b">
++      <default>false</default>
++      <summary>Use nearest scaling for legacy applications</summary>
++      <description>
++        If enabled, windows that cannot scale themselves to the Wayland
++        desktop scale are magnified using nearest-neighbor interpolation
++        instead of linear interpolation. This keeps such scaled content
++        sharp at the cost of a more pixelated appearance.
++      </description>
++    </key>
++
+     <key name="experimental-features"
+         flags='org.gnome.mutter.MetaExperimentalFeature'>
+       <default>[]</default>
 diff --git a/src/compositor/meta-shaped-texture.c b/src/compositor/meta-shaped-texture.c
-index 2d1d6524ee..777961a880 100644
+index a80818e3d2..9479ea15b7 100644
 --- a/src/compositor/meta-shaped-texture.c
 +++ b/src/compositor/meta-shaped-texture.c
-@@ -873,7 +873,7 @@ do_paint_content (MetaShapedTexture   *stex,
+@@ -46,6 +46,7 @@
+ #include "compositor/meta-texture-mipmap.h"
+ #include "core/boxes-private.h"
+ #include "meta/meta-shaped-texture.h"
++#include "meta/prefs.h"
+ 
+ static void meta_shaped_texture_dispose  (GObject    *object);
+ 
+@@ -893,7 +894,10 @@ do_paint_content (MetaShapedTexture   *stex,
    else
      {
        min_filter = COGL_PIPELINE_FILTER_LINEAR;
 -      mag_filter = COGL_PIPELINE_FILTER_LINEAR;
-+      mag_filter = COGL_PIPELINE_FILTER_NEAREST;
++      if (meta_prefs_get_nearest_scaling_for_legacy ())
++        mag_filter = COGL_PIPELINE_FILTER_NEAREST;
++      else
++        mag_filter = COGL_PIPELINE_FILTER_LINEAR;
  
        /* If we're painting a texture below half its native resolution
         * then mipmapping is required to avoid aliasing. If it's above
+diff --git a/src/core/prefs.c b/src/core/prefs.c
+index 19369d8a09..27be25ea74 100644
+--- a/src/core/prefs.c
++++ b/src/core/prefs.c
+@@ -112,6 +112,7 @@ static gboolean edge_tiling = FALSE;
+ static gboolean force_fullscreen = TRUE;
+ static gboolean auto_maximize = TRUE;
+ static gboolean show_fallback_app_menu = TRUE;
++static gboolean nearest_scaling_for_legacy = FALSE;
+ 
+ static GDesktopVisualBellType visual_bell_type = G_DESKTOP_VISUAL_BELL_FULLSCREEN_FLASH;
+ static MetaButtonLayout button_layout;
+@@ -382,6 +383,13 @@ static MetaBoolPreference preferences_bool[] =
+       },
+       &auto_maximize,
+     },
++    {
++      { "nearest-scaling-for-legacy",
++        SCHEMA_MUTTER,
++        META_PREF_NEAREST_SCALING_FOR_LEGACY,
++      },
++      &nearest_scaling_for_legacy,
++    },
+     {
+       { KEY_LOCATE_POINTER,
+         SCHEMA_INTERFACE,
+@@ -1718,6 +1726,9 @@ meta_preference_to_string (MetaPreference pref)
+ 
+     case META_PREF_CHECK_ALIVE_TIMEOUT:
+       return "CHECK_ALIVE_TIMEOUT";
++
++    case META_PREF_NEAREST_SCALING_FOR_LEGACY:
++      return "NEAREST_SCALING_FOR_LEGACY";
+     }
+ 
+   return "(unknown)";
+@@ -2140,6 +2151,12 @@ meta_prefs_get_auto_maximize (void)
+   return auto_maximize;
+ }
+ 
++gboolean
++meta_prefs_get_nearest_scaling_for_legacy (void)
++{
++  return nearest_scaling_for_legacy;
++}
++
+ MetaKeyBindingAction
+ meta_prefs_get_keybinding_action (const char *name)
+ {
+diff --git a/src/meta/prefs.h b/src/meta/prefs.h
+index 47c6e5ee40..722ceaa4f7 100644
+--- a/src/meta/prefs.h
++++ b/src/meta/prefs.h
+@@ -103,6 +103,7 @@ typedef enum
+   META_PREF_DRAG_THRESHOLD,
+   META_PREF_LOCATE_POINTER,
+   META_PREF_CHECK_ALIVE_TIMEOUT,
++  META_PREF_NEAREST_SCALING_FOR_LEGACY,
+ } MetaPreference;
+ 
+ typedef void (* MetaPrefsChangedFunc) (MetaPreference pref,
+@@ -173,6 +174,9 @@ gboolean                    meta_prefs_get_auto_maximize      (void);
+ META_EXPORT
+ gboolean                    meta_prefs_get_center_new_windows (void);
+ 
++META_EXPORT
++gboolean                    meta_prefs_get_nearest_scaling_for_legacy (void);
++
+ META_EXPORT
+ gboolean                    meta_prefs_get_show_fallback_app_menu (void);
+ 
