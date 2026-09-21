@@ -1,0 +1,256 @@
+From 8978a9056210db68ea050f29dd0fd1c201debe2e Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Sun, 20 Sep 2026 16:15:13 +0200
+Subject: [PATCH 4/6] xwayland: Scale windows absolutely when requested
+
+In absolute mode compute the effective scale as
+highest_monitor_scale / factor, so that an X11 window's physical size is
+independent of the desktop scale: with factor 1.0 a window keeps its
+native pixel size at any desktop scale, with factor 2.0 it is twice that,
+and so on.
+
+As the effective scale is now fractional and the Wayland buffer scale
+must stay an integer, express the per-window scaling through a
+compositor-imposed viewport destination size (buffer_size /
+effective_scale) for normal Xwayland surfaces, leaving client-driven
+viewports (e.g. resolution-change emulation) untouched.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ .../meta-wayland-pointer-constraints.c        |  7 +-
+ src/wayland/meta-wayland-surface.c            | 72 +++++++++++++++++--
+ src/wayland/meta-window-xwayland.c            |  6 +-
+ src/wayland/meta-xwayland-surface.c           |  4 +-
+ src/wayland/meta-xwayland.c                   | 36 ++++++++--
+ src/wayland/meta-xwayland.h                   |  2 +
+ 6 files changed, 112 insertions(+), 15 deletions(-)
+
+diff --git a/src/wayland/meta-wayland-pointer-constraints.c b/src/wayland/meta-wayland-pointer-constraints.c
+index bf4a72beb9..97c1f6726e 100644
+--- a/src/wayland/meta-wayland-pointer-constraints.c
++++ b/src/wayland/meta-wayland-pointer-constraints.c
+@@ -522,8 +522,11 @@ maybe_scale_for_xwayland (MetaWaylandSurface *surface,
+ {
+   if (meta_wayland_surface_is_xwayland (surface))
+     {
+-      *x /= surface->applied_state.scale;
+-      *y /= surface->applied_state.scale;
++      float scale =
++        meta_xwayland_get_effective_scale (&surface->compositor->xwayland_manager);
++
++      *x /= scale;
++      *y /= scale;
+     }
+ }
+ 
+diff --git a/src/wayland/meta-wayland-surface.c b/src/wayland/meta-wayland-surface.c
+index d6038470d2..4cf78411bc 100644
+--- a/src/wayland/meta-wayland-surface.c
++++ b/src/wayland/meta-wayland-surface.c
+@@ -948,9 +948,40 @@ meta_wayland_surface_apply_state (MetaWaylandSurface      *surface,
+ #ifdef HAVE_XWAYLAND
+       MetaXWaylandManager *xwayland_manager =
+         &surface->compositor->xwayland_manager;
++      float effective_scale =
++        meta_xwayland_get_effective_scale (xwayland_manager);
++      gboolean client_viewport =
++        surface->viewport.has_src_rect ||
++        (state->has_new_viewport_dst_size && state->viewport_dst_width > 0);
++
++      if (meta_xwayland_is_scaling_factor_absolute (xwayland_manager) &&
++          surface->buffer && !client_viewport)
++        {
++          /* In absolute mode the effective scale is fractional. Since the
++           * Wayland buffer scale must stay an integer, express the scaling via
++           * a compositor-imposed viewport destination size instead, so the
++           * window ends up at buffer_size / effective_scale logical pixels. */
++          int buffer_width = meta_wayland_surface_get_buffer_width (surface);
++          int buffer_height = meta_wayland_surface_get_buffer_height (surface);
++
++          surface->applied_state.scale = 1;
++          surface->viewport.dst_width =
++            (int) roundf (buffer_width / effective_scale);
++          surface->viewport.dst_height =
++            (int) roundf (buffer_height / effective_scale);
++          surface->viewport.has_dst_size =
++            surface->viewport.dst_width > 0 &&
++            surface->viewport.dst_height > 0;
++        }
++      else
++        {
++          surface->applied_state.scale = (int) roundf (effective_scale);
+ 
+-      surface->applied_state.scale =
+-        (int) roundf (meta_xwayland_get_effective_scale (xwayland_manager));
++          /* Drop any destination size previously imposed for absolute mode
++           * (client-driven viewports are left untouched). */
++          if (!client_viewport)
++            surface->viewport.has_dst_size = FALSE;
++        }
+ #endif
+     }
+   else if (state->scale > 0)
+@@ -1005,7 +1036,36 @@ meta_wayland_surface_apply_state (MetaWaylandSurface      *surface,
+ 
+       if (state->input_region)
+         {
++          gboolean scaled = FALSE;
++
++#ifdef HAVE_XWAYLAND
++          /* In absolute mode the buffer->surface scale is fractional and
++           * applied_state.scale is 1, so map the buffer-space region (rootless
++           * Xwayland always uses buffer scale 1) to surface-local coordinates
++           * using the surface (viewport) size. */
+           if (meta_wayland_surface_is_xwayland (surface) &&
++              meta_xwayland_is_scaling_factor_absolute (&surface->compositor->xwayland_manager))
++            {
++              int buffer_width = meta_wayland_surface_get_buffer_width (surface);
++              int buffer_height = meta_wayland_surface_get_buffer_height (surface);
++
++              if (buffer_width > 0 && buffer_height > 0)
++                {
++                  graphene_rect_t src_rect =
++                    GRAPHENE_RECT_INIT (0.0f, 0.0f,
++                                        meta_wayland_surface_get_width (surface),
++                                        meta_wayland_surface_get_height (surface));
++
++                  surface->input_region =
++                    mtk_region_crop_and_scale (state->input_region, &src_rect,
++                                               buffer_width, buffer_height);
++                  scaled = TRUE;
++                }
++            }
++#endif
++
++          if (!scaled &&
++              meta_wayland_surface_is_xwayland (surface) &&
+               surface->applied_state.scale > 1)
+             {
+               /* Compensate for rootless Xwayland always calculating region based
+@@ -1014,11 +1074,11 @@ meta_wayland_surface_apply_state (MetaWaylandSurface      *surface,
+               surface->input_region =
+                 mtk_region_downscale (state->input_region,
+                                       surface->applied_state.scale);
++              scaled = TRUE;
+             }
+-          else
+-            {
+-              surface->input_region = mtk_region_ref (state->input_region);
+-            }
++
++          if (!scaled)
++            surface->input_region = mtk_region_ref (state->input_region);
+         }
+     }
+ 
+diff --git a/src/wayland/meta-window-xwayland.c b/src/wayland/meta-window-xwayland.c
+index 0358f6e369..97d0746d1f 100644
+--- a/src/wayland/meta-window-xwayland.c
++++ b/src/wayland/meta-window-xwayland.c
+@@ -455,7 +455,8 @@ meta_window_xwayland_stage_to_protocol_size (MetaWindow *window,
+   scale_w = scale_h = meta_xwayland_get_effective_scale (xwayland_manager);
+ 
+   surface = meta_window_get_wayland_surface (window);
+-  if (surface && surface->viewport.has_dst_size)
++  if (surface && surface->viewport.has_dst_size &&
++      !meta_xwayland_is_scaling_factor_absolute (xwayland_manager))
+     {
+       if (protocol_w)
+         scale_w /= get_viewport_scale_x (surface);
+@@ -527,7 +528,8 @@ meta_window_xwayland_protocol_to_stage_size (MetaWindow *window,
+   scale_w = scale_h = 1.0f / xwayland_scale;
+ 
+   surface = meta_window_get_wayland_surface (window);
+-  if (surface && surface->viewport.has_dst_size)
++  if (surface && surface->viewport.has_dst_size &&
++      !meta_xwayland_is_scaling_factor_absolute (xwayland_manager))
+     {
+       if (stage_w)
+         scale_w *= get_viewport_scale_x (surface);
+diff --git a/src/wayland/meta-xwayland-surface.c b/src/wayland/meta-xwayland-surface.c
+index 8e7307a196..d6c3739b2b 100644
+--- a/src/wayland/meta-xwayland-surface.c
++++ b/src/wayland/meta-xwayland-surface.c
+@@ -175,7 +175,9 @@ meta_xwayland_surface_get_relative_coordinates (MetaWaylandSurfaceRole *surface_
+   MetaWaylandSurface *surface =
+     meta_wayland_surface_role_get_surface (surface_role);
+   MtkRectangle window_rect = { 0 };
+-  int xwayland_scale = surface->applied_state.scale;
++  MetaXWaylandManager *xwayland_manager =
++    &surface->compositor->xwayland_manager;
++  float xwayland_scale = meta_xwayland_get_effective_scale (xwayland_manager);
+ 
+   if (xwayland_surface->window)
+     meta_window_get_buffer_rect (xwayland_surface->window, &window_rect);
+diff --git a/src/wayland/meta-xwayland.c b/src/wayland/meta-xwayland.c
+index 45b1f1dd01..5d251ae4bc 100644
+--- a/src/wayland/meta-xwayland.c
++++ b/src/wayland/meta-xwayland.c
+@@ -1365,12 +1365,29 @@ meta_xwayland_get_effective_scale (MetaXWaylandManager *manager)
+       {
+         MetaSettings *settings = meta_backend_get_settings (backend);
+         float scaling_factor;
+-
+-        if (meta_settings_get_xwayland_scaling_factor (settings,
+-                                                       &scaling_factor))
++        gboolean has_factor;
++
++        has_factor = meta_settings_get_xwayland_scaling_factor (settings,
++                                                               &scaling_factor);
++
++        if (meta_settings_is_xwayland_scaling_factor_absolute (settings))
++          {
++            /* In absolute mode the configured factor is the physical scale the
++             * window should keep regardless of the desktop scale. X11 clients
++             * are told the scale is 100% (see
++             * meta_xwayland_get_x11_ui_scaling_factor()), and the compositor
++             * scales their windows by highest_monitor_scale / factor so that
++             * the resulting physical size is independent of the desktop scale.
++             * The factor is used as-is (not rounded), and 0 (auto) means 1. */
++            float factor = has_factor ? scaling_factor : 1.0f;
++
++            return (float) (manager->highest_monitor_scale / factor);
++          }
++
++        if (has_factor)
+           return roundf (scaling_factor);
+         else
+-          return ceilf (manager->highest_monitor_scale);
++          return (float) ceil (manager->highest_monitor_scale);
+       }
+     }
+ 
+@@ -1403,6 +1420,17 @@ meta_xwayland_get_x11_ui_scaling_factor (MetaXWaylandManager *manager)
+   g_assert_not_reached ();
+ }
+ 
++gboolean
++meta_xwayland_is_scaling_factor_absolute (MetaXWaylandManager *manager)
++{
++  MetaWaylandCompositor *compositor = manager->compositor;
++  MetaContext *context = meta_wayland_compositor_get_context (compositor);
++  MetaBackend *backend = meta_context_get_backend (context);
++  MetaSettings *settings = meta_backend_get_settings (backend);
++
++  return meta_settings_is_xwayland_scaling_factor_absolute (settings);
++}
++
+ const char *
+ meta_xwayland_get_public_display_name (MetaXWaylandManager *manager)
+ {
+diff --git a/src/wayland/meta-xwayland.h b/src/wayland/meta-xwayland.h
+index 04dacc3f3b..bd61389ddc 100644
+--- a/src/wayland/meta-xwayland.h
++++ b/src/wayland/meta-xwayland.h
+@@ -47,6 +47,8 @@ gboolean meta_xwayland_signal (MetaXWaylandManager  *manager,
+ 
+ float meta_xwayland_get_effective_scale (MetaXWaylandManager *manager);
+ 
++gboolean meta_xwayland_is_scaling_factor_absolute (MetaXWaylandManager *manager);
++
+ int meta_xwayland_get_x11_ui_scaling_factor (MetaXWaylandManager *manager);
+ 
+ const char * meta_xwayland_get_public_display_name (MetaXWaylandManager *manager);
+-- 
+2.55.0
+

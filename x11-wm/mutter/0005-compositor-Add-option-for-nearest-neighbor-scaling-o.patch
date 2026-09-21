@@ -1,0 +1,246 @@
+From 0885f3e220f387dbfd62c74851789e44cdf1b28c Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Sun, 20 Sep 2026 15:40:01 +0200
+Subject: [PATCH 5/6] compositor: Add option for nearest-neighbor scaling of
+ Xwayland windows
+
+Add a boolean setting, org.gnome.mutter.wayland xwayland-scaling-nearest,
+controlling how Xwayland windows are filtered when the compositor scales
+them up. When enabled, such windows are magnified using nearest-neighbor
+interpolation instead of linear, which keeps upscaled X11 content sharp at
+the cost of a more pixelated appearance. This is most useful together with
+integer Xwayland scaling factors.
+
+The filter applies only to Xwayland surfaces; native Wayland surfaces
+always use linear filtering.
+---
+ data/org.gnome.mutter.wayland.gschema.xml.in | 12 +++++++++++
+ src/backends/meta-settings-private.h         |  2 ++
+ src/backends/meta-settings.c                 | 20 +++++++++++++++++++
+ src/compositor/meta-shaped-texture-private.h |  2 ++
+ src/compositor/meta-shaped-texture.c         | 21 +++++++++++++++++++-
+ src/wayland/meta-wayland-actor-surface.c     | 10 ++++++++++
+ src/wayland/meta-xwayland.c                  | 11 ++++++++++
+ src/wayland/meta-xwayland.h                  |  2 ++
+ 8 files changed, 79 insertions(+), 1 deletion(-)
+
+diff --git a/data/org.gnome.mutter.wayland.gschema.xml.in b/data/org.gnome.mutter.wayland.gschema.xml.in
+index 9cf8e77288..7bc17deeda 100644
+--- a/data/org.gnome.mutter.wayland.gschema.xml.in
++++ b/data/org.gnome.mutter.wayland.gschema.xml.in
+@@ -176,6 +176,18 @@
+       </description>
+     </key>
+ 
++    <key name="xwayland-scaling-nearest" type="b">
++      <default>false</default>
++      <summary>Use nearest-neighbor filtering when scaling up Xwayland windows</summary>
++      <description>
++        When enabled, Xwayland windows that are scaled up by the compositor are
++        magnified using nearest-neighbor interpolation instead of linear
++        interpolation. This keeps upscaled X11 content sharp at the cost of a
++        more pixelated look, and is most useful with integer Xwayland scaling
++        factors. Native Wayland windows are not affected.
++      </description>
++    </key>
++
+     <child name="keybindings" schema="org.gnome.mutter.wayland.keybindings"/>
+   </schema>
+ 
+diff --git a/src/backends/meta-settings-private.h b/src/backends/meta-settings-private.h
+index 04dde0483f..6c10e65933 100644
+--- a/src/backends/meta-settings-private.h
++++ b/src/backends/meta-settings-private.h
+@@ -78,6 +78,8 @@ gboolean meta_settings_get_xwayland_scaling_factor (MetaSettings *settings,
+ 
+ gboolean meta_settings_is_xwayland_scaling_factor_absolute (MetaSettings *settings);
+ 
++gboolean meta_settings_is_xwayland_scaling_nearest (MetaSettings *settings);
++
+ gboolean meta_settings_is_privacy_screen_enabled (MetaSettings *settings);
+ 
+ void meta_settings_set_privacy_screen_enabled (MetaSettings *settings,
+diff --git a/src/backends/meta-settings.c b/src/backends/meta-settings.c
+index e9af376257..b4d823fbfd 100644
+--- a/src/backends/meta-settings.c
++++ b/src/backends/meta-settings.c
+@@ -84,6 +84,7 @@ struct _MetaSettings
+ 
+   float xwayland_scaling_factor;
+   gboolean xwayland_scaling_factor_absolute;
++  gboolean xwayland_scaling_nearest;
+ };
+ 
+ G_DEFINE_TYPE (MetaSettings, meta_settings, G_TYPE_OBJECT)
+@@ -462,6 +463,14 @@ update_xwayland_scaling_factor_absolute (MetaSettings *settings)
+                             "xwayland-scaling-factor-absolute");
+ }
+ 
++static void
++update_xwayland_scaling_nearest (MetaSettings *settings)
++{
++  settings->xwayland_scaling_nearest =
++    g_settings_get_boolean (settings->wayland_settings,
++                            "xwayland-scaling-nearest");
++}
++
+ static void
+ wayland_settings_changed (GSettings    *wayland_settings,
+                           gchar        *key,
+@@ -494,6 +503,10 @@ wayland_settings_changed (GSettings    *wayland_settings,
+       update_xwayland_scaling_factor_absolute (settings);
+       g_signal_emit (settings, signals[XWAYLAND_SCALING_FACTOR_CHANGED], 0);
+     }
++  else if (g_str_equal (key, "xwayland-scaling-nearest"))
++    {
++      update_xwayland_scaling_nearest (settings);
++    }
+ }
+ 
+ void
+@@ -544,6 +557,12 @@ meta_settings_is_xwayland_scaling_factor_absolute (MetaSettings *settings)
+   return settings->xwayland_scaling_factor_absolute;
+ }
+ 
++gboolean
++meta_settings_is_xwayland_scaling_nearest (MetaSettings *settings)
++{
++  return settings->xwayland_scaling_nearest;
++}
++
+ gboolean
+ meta_settings_is_privacy_screen_enabled (MetaSettings *settings)
+ {
+@@ -642,6 +661,7 @@ meta_settings_init (MetaSettings *settings)
+   update_xwayland_allow_byte_swapped_clients (settings);
+   update_xwayland_scaling_factor (settings);
+   update_xwayland_scaling_factor_absolute (settings);
++  update_xwayland_scaling_nearest (settings);
+ }
+ 
+ static void
+diff --git a/src/compositor/meta-shaped-texture-private.h b/src/compositor/meta-shaped-texture-private.h
+index 4e077506b2..83f3408969 100644
+--- a/src/compositor/meta-shaped-texture-private.h
++++ b/src/compositor/meta-shaped-texture-private.h
+@@ -57,6 +57,8 @@ void meta_shaped_texture_set_viewport_dst_size (MetaShapedTexture *stex,
+ void meta_shaped_texture_reset_viewport_dst_size (MetaShapedTexture *stex);
+ void meta_shaped_texture_set_buffer_scale (MetaShapedTexture *stex,
+                                            int                buffer_scale);
++void meta_shaped_texture_set_nearest_scaling (MetaShapedTexture *stex,
++                                              gboolean           nearest_scaling);
+ 
+ gboolean meta_shaped_texture_update_area (MetaShapedTexture  *stex,
+                                           const MtkRectangle *area,
+diff --git a/src/compositor/meta-shaped-texture.c b/src/compositor/meta-shaped-texture.c
+index 5a67cea790..27b4eb2c46 100644
+--- a/src/compositor/meta-shaped-texture.c
++++ b/src/compositor/meta-shaped-texture.c
+@@ -127,6 +127,7 @@ struct _MetaShapedTexture
+   int buffer_scale;
+ 
+   guint create_mipmaps : 1;
++  guint nearest_scaling : 1;
+ 
+   MetaMultiTextureAlphaMode premult;
+   MetaMultiTextureCoefficients coeffs;
+@@ -895,7 +896,10 @@ do_paint_content (MetaShapedTexture   *stex,
+   else
+     {
+       min_filter = COGL_PIPELINE_FILTER_LINEAR;
+-      mag_filter = COGL_PIPELINE_FILTER_LINEAR;
++      if (stex->nearest_scaling)
++        mag_filter = COGL_PIPELINE_FILTER_NEAREST;
++      else
++        mag_filter = COGL_PIPELINE_FILTER_LINEAR;
+ 
+       /* If we're painting a texture below half its native resolution
+        * then mipmapping is required to avoid aliasing. If it's above
+@@ -1180,6 +1184,21 @@ meta_shaped_texture_set_create_mipmaps (MetaShapedTexture *stex,
+     }
+ }
+ 
++void
++meta_shaped_texture_set_nearest_scaling (MetaShapedTexture *stex,
++                                         gboolean           nearest_scaling)
++{
++  g_return_if_fail (META_IS_SHAPED_TEXTURE (stex));
++
++  nearest_scaling = nearest_scaling != FALSE;
++
++  if (nearest_scaling != stex->nearest_scaling)
++    {
++      stex->nearest_scaling = nearest_scaling;
++      clutter_content_invalidate (CLUTTER_CONTENT (stex));
++    }
++}
++
+ void
+ meta_shaped_texture_set_mask_texture (MetaShapedTexture *stex,
+                                       CoglTexture       *mask_texture)
+diff --git a/src/wayland/meta-wayland-actor-surface.c b/src/wayland/meta-wayland-actor-surface.c
+index a71747e97f..f4a833181a 100644
+--- a/src/wayland/meta-wayland-actor-surface.c
++++ b/src/wayland/meta-wayland-actor-surface.c
+@@ -30,6 +30,7 @@
+ #include "wayland/meta-window-wayland.h"
+ 
+ #ifdef HAVE_XWAYLAND
++#include "wayland/meta-xwayland.h"
+ #include "wayland/meta-xwayland-surface.h"
+ #endif
+ 
+@@ -180,6 +181,15 @@ meta_wayland_actor_surface_real_sync_actor_state (MetaWaylandActorSurface *actor
+   surface_actor = priv->actor;
+   stex = meta_surface_actor_get_texture (surface_actor);
+ 
++#ifdef HAVE_XWAYLAND
++  /* Only Xwayland surfaces use nearest-neighbor magnification, and only when the
++   * setting is enabled; native Wayland surfaces always use linear. */
++  meta_shaped_texture_set_nearest_scaling (
++    stex,
++    meta_wayland_surface_is_xwayland (surface) &&
++    meta_xwayland_is_scaling_nearest (&surface->compositor->xwayland_manager));
++#endif
++
+   buffer = meta_wayland_surface_get_buffer (surface);
+   if (buffer)
+     {
+diff --git a/src/wayland/meta-xwayland.c b/src/wayland/meta-xwayland.c
+index 5d251ae4bc..a5cf56f6cd 100644
+--- a/src/wayland/meta-xwayland.c
++++ b/src/wayland/meta-xwayland.c
+@@ -1431,6 +1431,17 @@ meta_xwayland_is_scaling_factor_absolute (MetaXWaylandManager *manager)
+   return meta_settings_is_xwayland_scaling_factor_absolute (settings);
+ }
+ 
++gboolean
++meta_xwayland_is_scaling_nearest (MetaXWaylandManager *manager)
++{
++  MetaWaylandCompositor *compositor = manager->compositor;
++  MetaContext *context = meta_wayland_compositor_get_context (compositor);
++  MetaBackend *backend = meta_context_get_backend (context);
++  MetaSettings *settings = meta_backend_get_settings (backend);
++
++  return meta_settings_is_xwayland_scaling_nearest (settings);
++}
++
+ const char *
+ meta_xwayland_get_public_display_name (MetaXWaylandManager *manager)
+ {
+diff --git a/src/wayland/meta-xwayland.h b/src/wayland/meta-xwayland.h
+index bd61389ddc..5af97fdd16 100644
+--- a/src/wayland/meta-xwayland.h
++++ b/src/wayland/meta-xwayland.h
+@@ -49,6 +49,8 @@ float meta_xwayland_get_effective_scale (MetaXWaylandManager *manager);
+ 
+ gboolean meta_xwayland_is_scaling_factor_absolute (MetaXWaylandManager *manager);
+ 
++gboolean meta_xwayland_is_scaling_nearest (MetaXWaylandManager *manager);
++
+ int meta_xwayland_get_x11_ui_scaling_factor (MetaXWaylandManager *manager);
+ 
+ const char * meta_xwayland_get_public_display_name (MetaXWaylandManager *manager);
+-- 
+2.55.0
+

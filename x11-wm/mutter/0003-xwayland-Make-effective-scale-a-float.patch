@@ -1,0 +1,206 @@
+From 7563fad41fc57cdb9a69a58d2e7a26957ea44970 Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Sun, 20 Sep 2026 16:07:29 +0200
+Subject: [PATCH 3/6] xwayland: Make effective scale a float
+
+Change meta_xwayland_get_effective_scale() to return a float and update
+all consumers to handle a fractional value with explicit rounding. This
+is a pure refactor: the function still returns integer values, so
+behavior is unchanged. It prepares for an absolute scaling mode where the
+effective scale is fractional.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/wayland/meta-wayland-outputs.c     |  8 ++++----
+ src/wayland/meta-wayland-pointer.c     |  2 +-
+ src/wayland/meta-wayland-surface.c     |  5 +++--
+ src/wayland/meta-wayland-tablet-tool.c |  2 +-
+ src/wayland/meta-window-xwayland.c     |  4 ++--
+ src/wayland/meta-xwayland.c            | 10 +++++-----
+ src/wayland/meta-xwayland.h            |  2 +-
+ src/x11/meta-x11-display.c             |  6 +++---
+ 8 files changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/src/wayland/meta-wayland-outputs.c b/src/wayland/meta-wayland-outputs.c
+index fa12235e0d..afdbe89f4d 100644
+--- a/src/wayland/meta-wayland-outputs.c
++++ b/src/wayland/meta-wayland-outputs.c
+@@ -71,7 +71,7 @@ struct _MetaWaylandOutput
+   MetaMonitor *monitor;
+ 
+ #ifdef HAVE_XWAYLAND
+-  int xwayland_scale;
++  float xwayland_scale;
+ #endif
+ };
+ 
+@@ -213,11 +213,11 @@ maybe_scale_for_xwayland (MetaWaylandOutput  *wayland_output,
+     {
+       MetaXWaylandManager *xwayland_manager =
+         &wayland_output->compositor->xwayland_manager;
+-      int xwayland_scale;
++      float xwayland_scale;
+ 
+       xwayland_scale = meta_xwayland_get_effective_scale (xwayland_manager);
+-      *x *= xwayland_scale;
+-      *y *= xwayland_scale;
++      *x = (int) roundf (*x * xwayland_scale);
++      *y = (int) roundf (*y * xwayland_scale);
+     }
+ #endif
+ }
+diff --git a/src/wayland/meta-wayland-pointer.c b/src/wayland/meta-wayland-pointer.c
+index ec3447dd3b..4d14799c39 100644
+--- a/src/wayland/meta-wayland-pointer.c
++++ b/src/wayland/meta-wayland-pointer.c
+@@ -1364,7 +1364,7 @@ pointer_set_cursor (struct wl_client *client,
+         {
+           MetaXWaylandManager *xwayland_manager =
+             &surface->compositor->xwayland_manager;
+-          int scale;
++          float scale;
+ 
+           scale = meta_xwayland_get_effective_scale (xwayland_manager);
+           hot_x = (int32_t) round (hot_x / (double) scale);
+diff --git a/src/wayland/meta-wayland-surface.c b/src/wayland/meta-wayland-surface.c
+index ebbd3f3975..d6038470d2 100644
+--- a/src/wayland/meta-wayland-surface.c
++++ b/src/wayland/meta-wayland-surface.c
+@@ -950,7 +950,7 @@ meta_wayland_surface_apply_state (MetaWaylandSurface      *surface,
+         &surface->compositor->xwayland_manager;
+ 
+       surface->applied_state.scale =
+-        meta_xwayland_get_effective_scale (xwayland_manager);
++        (int) roundf (meta_xwayland_get_effective_scale (xwayland_manager));
+ #endif
+     }
+   else if (state->scale > 0)
+@@ -1704,7 +1704,8 @@ meta_wayland_surface_update_outputs (MetaWaylandSurface *surface)
+       MetaXWaylandManager *xwayland_manager =
+         &surface->compositor->xwayland_manager;
+ 
+-      surface->applied_state.scale = meta_xwayland_get_effective_scale (xwayland_manager);
++      surface->applied_state.scale =
++        (int) roundf (meta_xwayland_get_effective_scale (xwayland_manager));
+ #endif
+     }
+ }
+diff --git a/src/wayland/meta-wayland-tablet-tool.c b/src/wayland/meta-wayland-tablet-tool.c
+index d25de93c18..0390ca6514 100644
+--- a/src/wayland/meta-wayland-tablet-tool.c
++++ b/src/wayland/meta-wayland-tablet-tool.c
+@@ -523,7 +523,7 @@ tool_set_cursor (struct wl_client   *client,
+         {
+           MetaXWaylandManager *xwayland_manager =
+             &surface->compositor->xwayland_manager;
+-          int scale;
++          float scale;
+ 
+           scale = meta_xwayland_get_effective_scale (xwayland_manager);
+           hot_x = (int32_t) round (hot_x / (double) scale);
+diff --git a/src/wayland/meta-window-xwayland.c b/src/wayland/meta-window-xwayland.c
+index 58137e4ce3..0358f6e369 100644
+--- a/src/wayland/meta-window-xwayland.c
++++ b/src/wayland/meta-window-xwayland.c
+@@ -489,7 +489,7 @@ meta_window_xwayland_protocol_to_stage (MetaWindow          *window,
+   MetaWaylandCompositor *wayland_compositor =
+     meta_context_get_wayland_compositor (context);
+   MetaXWaylandManager *xwayland_manager = &wayland_compositor->xwayland_manager;
+-  int xwayland_scale;
++  float xwayland_scale;
+   float scale;
+ 
+   xwayland_scale = meta_xwayland_get_effective_scale (xwayland_manager);
+@@ -520,7 +520,7 @@ meta_window_xwayland_protocol_to_stage_size (MetaWindow *window,
+     meta_context_get_wayland_compositor (context);
+   MetaXWaylandManager *xwayland_manager = &wayland_compositor->xwayland_manager;
+   MetaWaylandSurface *surface;
+-  int xwayland_scale;
++  float xwayland_scale;
+   float scale_w, scale_h;
+ 
+   xwayland_scale = meta_xwayland_get_effective_scale (xwayland_manager);
+diff --git a/src/wayland/meta-xwayland.c b/src/wayland/meta-xwayland.c
+index 90e9ad3c35..45b1f1dd01 100644
+--- a/src/wayland/meta-xwayland.c
++++ b/src/wayland/meta-xwayland.c
+@@ -1348,7 +1348,7 @@ meta_xwayland_set_should_enable_ei_portal (MetaXWaylandManager  *manager,
+   manager->should_enable_ei_portal = should_enable_ei_portal;
+ }
+ 
+-int
++float
+ meta_xwayland_get_effective_scale (MetaXWaylandManager *manager)
+ {
+   MetaWaylandCompositor *compositor = manager->compositor;
+@@ -1360,7 +1360,7 @@ meta_xwayland_get_effective_scale (MetaXWaylandManager *manager)
+   switch (meta_monitor_manager_get_layout_mode (monitor_manager))
+     {
+     case META_LOGICAL_MONITOR_LAYOUT_MODE_PHYSICAL:
+-      return 1;
++      return 1.0f;
+     case META_LOGICAL_MONITOR_LAYOUT_MODE_LOGICAL:
+       {
+         MetaSettings *settings = meta_backend_get_settings (backend);
+@@ -1368,9 +1368,9 @@ meta_xwayland_get_effective_scale (MetaXWaylandManager *manager)
+ 
+         if (meta_settings_get_xwayland_scaling_factor (settings,
+                                                        &scaling_factor))
+-          return (int) roundf (scaling_factor);
++          return roundf (scaling_factor);
+         else
+-          return (int) ceil (manager->highest_monitor_scale);
++          return ceilf (manager->highest_monitor_scale);
+       }
+     }
+ 
+@@ -1397,7 +1397,7 @@ meta_xwayland_get_x11_ui_scaling_factor (MetaXWaylandManager *manager)
+        * own instead (see meta_xwayland_get_effective_scale()). */
+       if (meta_settings_is_xwayland_scaling_factor_absolute (settings))
+         return 1;
+-      return meta_xwayland_get_effective_scale (manager);
++      return (int) meta_xwayland_get_effective_scale (manager);
+     }
+ 
+   g_assert_not_reached ();
+diff --git a/src/wayland/meta-xwayland.h b/src/wayland/meta-xwayland.h
+index ed8540ad21..04dacc3f3b 100644
+--- a/src/wayland/meta-xwayland.h
++++ b/src/wayland/meta-xwayland.h
+@@ -45,7 +45,7 @@ gboolean meta_xwayland_signal (MetaXWaylandManager  *manager,
+                                int                   signum,
+                                GError              **error);
+ 
+-int meta_xwayland_get_effective_scale (MetaXWaylandManager *manager);
++float meta_xwayland_get_effective_scale (MetaXWaylandManager *manager);
+ 
+ int meta_xwayland_get_x11_ui_scaling_factor (MetaXWaylandManager *manager);
+ 
+diff --git a/src/x11/meta-x11-display.c b/src/x11/meta-x11-display.c
+index 41d6be0951..4a76155638 100644
+--- a/src/x11/meta-x11-display.c
++++ b/src/x11/meta-x11-display.c
+@@ -135,7 +135,7 @@ stage_to_protocol (MetaX11Display *x11_display,
+ {
+   MetaDisplay *display = meta_x11_display_get_display (x11_display);
+   MetaContext *context = meta_display_get_context (display);
+-  int scale = 1;
++  float scale;
+ 
+   MetaWaylandCompositor *wayland_compositor =
+     meta_context_get_wayland_compositor (context);
+@@ -145,9 +145,9 @@ stage_to_protocol (MetaX11Display *x11_display,
+   scale = meta_xwayland_get_effective_scale (xwayland_manager);
+ 
+   if (protocol_x)
+-    *protocol_x = stage_x * scale;
++    *protocol_x = (int) roundf (stage_x * scale);
+   if (protocol_y)
+-    *protocol_y = stage_y * scale;
++    *protocol_y = (int) roundf (stage_y * scale);
+ }
+ 
+ static void
+-- 
+2.55.0
+

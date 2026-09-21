@@ -1,0 +1,123 @@
+From 8bf1bf7823344104db63de7ad3cd9075a757502d Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Sun, 20 Sep 2026 15:24:27 +0200
+Subject: [PATCH 1/6] settings: Add xwayland-scaling-factor-absolute setting
+
+Add a new boolean GSettings key that will make the Xwayland scaling
+factor absolute, i.e. independent of the overall desktop (monitor)
+scale, instead of being applied on top of it.
+
+This commit only adds the setting and its plumbing in MetaSettings; no
+behavior changes yet. Changing the key reuses the existing
+xwayland-scaling-factor-changed signal so it triggers a monitor manager
+reconfigure like the scaling factor itself.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ data/org.gnome.mutter.wayland.gschema.xml.in | 15 ++++++++++++++
+ src/backends/meta-settings-private.h         |  2 ++
+ src/backends/meta-settings.c                 | 21 ++++++++++++++++++++
+ 3 files changed, 38 insertions(+)
+
+diff --git a/data/org.gnome.mutter.wayland.gschema.xml.in b/data/org.gnome.mutter.wayland.gschema.xml.in
+index c4dde1d156..9cf8e77288 100644
+--- a/data/org.gnome.mutter.wayland.gschema.xml.in
++++ b/data/org.gnome.mutter.wayland.gschema.xml.in
+@@ -161,6 +161,21 @@
+       </description>
+     </key>
+ 
++    <key name="xwayland-scaling-factor-absolute" type="b">
++      <default>false</default>
++      <summary>Make the Xwayland scaling factor absolute</summary>
++      <description>
++        By default the Xwayland scaling factor is applied on top of the overall
++        desktop (monitor) scale, so an X11 window's physical size still tracks
++        the desktop scale. When this is enabled, the scale configured in
++        “xwayland-scaling-factor” is treated as absolute: X11 clients are always
++        told the scale is 100% (so they do not scale themselves), and the
++        compositor scales their windows independently of the desktop scale, so a
++        given window keeps the same physical size regardless of the desktop
++        scale.
++      </description>
++    </key>
++
+     <child name="keybindings" schema="org.gnome.mutter.wayland.keybindings"/>
+   </schema>
+ 
+diff --git a/src/backends/meta-settings-private.h b/src/backends/meta-settings-private.h
+index 2ba4443a04..04dde0483f 100644
+--- a/src/backends/meta-settings-private.h
++++ b/src/backends/meta-settings-private.h
+@@ -76,6 +76,8 @@ gboolean meta_settings_are_xwayland_byte_swapped_clients_allowed (MetaSettings *
+ gboolean meta_settings_get_xwayland_scaling_factor (MetaSettings *settings,
+                                                     float        *scaling_factor);
+ 
++gboolean meta_settings_is_xwayland_scaling_factor_absolute (MetaSettings *settings);
++
+ gboolean meta_settings_is_privacy_screen_enabled (MetaSettings *settings);
+ 
+ void meta_settings_set_privacy_screen_enabled (MetaSettings *settings,
+diff --git a/src/backends/meta-settings.c b/src/backends/meta-settings.c
+index 75385d6df6..e9af376257 100644
+--- a/src/backends/meta-settings.c
++++ b/src/backends/meta-settings.c
+@@ -83,6 +83,7 @@ struct _MetaSettings
+   gboolean xwayland_allow_byte_swapped_clients;
+ 
+   float xwayland_scaling_factor;
++  gboolean xwayland_scaling_factor_absolute;
+ };
+ 
+ G_DEFINE_TYPE (MetaSettings, meta_settings, G_TYPE_OBJECT)
+@@ -453,6 +454,14 @@ update_xwayland_scaling_factor (MetaSettings *settings)
+                                    "xwayland-scaling-factor");
+ }
+ 
++static void
++update_xwayland_scaling_factor_absolute (MetaSettings *settings)
++{
++  settings->xwayland_scaling_factor_absolute =
++    g_settings_get_boolean (settings->wayland_settings,
++                            "xwayland-scaling-factor-absolute");
++}
++
+ static void
+ wayland_settings_changed (GSettings    *wayland_settings,
+                           gchar        *key,
+@@ -480,6 +489,11 @@ wayland_settings_changed (GSettings    *wayland_settings,
+       update_xwayland_scaling_factor (settings);
+       g_signal_emit (settings, signals[XWAYLAND_SCALING_FACTOR_CHANGED], 0);
+     }
++  else if (g_str_equal (key, "xwayland-scaling-factor-absolute"))
++    {
++      update_xwayland_scaling_factor_absolute (settings);
++      g_signal_emit (settings, signals[XWAYLAND_SCALING_FACTOR_CHANGED], 0);
++    }
+ }
+ 
+ void
+@@ -524,6 +538,12 @@ meta_settings_get_xwayland_scaling_factor (MetaSettings *settings,
+     }
+ }
+ 
++gboolean
++meta_settings_is_xwayland_scaling_factor_absolute (MetaSettings *settings)
++{
++  return settings->xwayland_scaling_factor_absolute;
++}
++
+ gboolean
+ meta_settings_is_privacy_screen_enabled (MetaSettings *settings)
+ {
+@@ -621,6 +641,7 @@ meta_settings_init (MetaSettings *settings)
+   update_privacy_settings (settings);
+   update_xwayland_allow_byte_swapped_clients (settings);
+   update_xwayland_scaling_factor (settings);
++  update_xwayland_scaling_factor_absolute (settings);
+ }
+ 
+ static void
+-- 
+2.55.0
+

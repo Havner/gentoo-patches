@@ -1,0 +1,34 @@
+From 68bd55a2053fc9b7dcdfec5067a027ad6f2662fb Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Sun, 20 Sep 2026 15:39:22 +0200
+Subject: [PATCH 2/6] xwayland: Tell X11 clients scale is 100% in absolute mode
+
+When xwayland-scaling-factor-absolute is enabled, always report a UI
+scaling factor of 1 to X11 clients so they don't scale themselves. The
+compositor-side scaling (effective scale) is intentionally left unchanged
+here; making it independent of the desktop scale is done separately.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/wayland/meta-xwayland.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/wayland/meta-xwayland.c b/src/wayland/meta-xwayland.c
+index 2e2f7ad06b..90e9ad3c35 100644
+--- a/src/wayland/meta-xwayland.c
++++ b/src/wayland/meta-xwayland.c
+@@ -1392,6 +1392,11 @@ meta_xwayland_get_x11_ui_scaling_factor (MetaXWaylandManager *manager)
+     case META_LOGICAL_MONITOR_LAYOUT_MODE_PHYSICAL:
+       return meta_settings_get_ui_scaling_factor (settings);
+     case META_LOGICAL_MONITOR_LAYOUT_MODE_LOGICAL:
++      /* In absolute mode X11 clients are always told the scale is 100% so that
++       * they don't scale themselves; the compositor scales their windows on its
++       * own instead (see meta_xwayland_get_effective_scale()). */
++      if (meta_settings_is_xwayland_scaling_factor_absolute (settings))
++        return 1;
+       return meta_xwayland_get_effective_scale (manager);
+     }
+ 
+-- 
+2.55.0
+

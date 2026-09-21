@@ -1,0 +1,235 @@
+From 4c429b6fead8a0ab3f4e20422b29c48bfcd734bc Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Sun, 20 Sep 2026 20:12:24 +0200
+Subject: [PATCH 6/6] compositor: Snap absolute-scaled Xwayland surfaces to the
+ physical pixel grid
+
+In absolute Xwayland scaling mode a window renders at (a multiple of) its
+native resolution, so its buffer should blit 1:1 onto the framebuffer. But
+the surface lives in logical space and is mapped to physical pixels by the
+fractional monitor scale, so without alignment its physical size and origin
+land off the pixel grid, turning the intended 1:1 blit into a resample: a
+fractional extent drops/doubles a row and column, and a fractional origin
+shifts the content by up to a pixel (a stray dark edge) - even with
+nearest-neighbor filtering.
+
+Align absolute-scaled Xwayland surfaces to the physical pixel grid, mirroring
+what mutter already does for native Wayland windows:
+
+ - Size: in meta_surface_actor_wayland_apply_transform() snap the surface to a
+   physical size of buffer_size * factor exactly (buffer / effective_scale
+   logical), instead of the generic grid snap which rounds the already-rounded
+   logical size again and can miss the buffer size by a pixel.
+
+ - Position: native Wayland gets this from MetaSurfaceContainerActorWayland,
+   which Xwayland windows lack, so snap the on-monitor position in
+   meta_window_actor_x11_apply_transform() - on the window actor, whose
+   transform (unlike the surface actor's) is recomputed as the window moves.
+
+ - Invalidate the surface actor's transform on each commit, so the size snap
+   is recomputed against the newly committed buffer rather than a stale cached
+   value (which otherwise left some sizes off-grid until the next relayout).
+
+Native Wayland surfaces and non-absolute Xwayland are unaffected, and surfaces
+that are already grid-aligned (e.g. fullscreen) see no change.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/compositor/meta-surface-actor-wayland.c | 40 +++++++++++-
+ src/compositor/meta-window-actor-x11.c      | 71 +++++++++++++++++++++
+ src/wayland/meta-wayland-actor-surface.c    |  9 +++
+ 3 files changed, 119 insertions(+), 1 deletion(-)
+
+diff --git a/src/compositor/meta-surface-actor-wayland.c b/src/compositor/meta-surface-actor-wayland.c
+index ec607260ca..5416e9f074 100644
+--- a/src/compositor/meta-surface-actor-wayland.c
++++ b/src/compositor/meta-surface-actor-wayland.c
+@@ -36,6 +36,9 @@
+ #include "wayland/meta-wayland-private.h"
+ #include "wayland/meta-wayland-subsurface.h"
+ #include "wayland/meta-window-wayland.h"
++#ifdef HAVE_XWAYLAND
++#include "wayland/meta-xwayland.h"
++#endif
+ 
+ struct _MetaSurfaceActorWayland
+ {
+@@ -170,6 +173,7 @@ meta_surface_actor_wayland_apply_transform (ClutterActor      *actor,
+   float adj_actor_x, adj_actor_y;
+   float width_scale, height_scale;
+   float x_off, y_off;
++  gboolean is_xwayland_absolute = FALSE;
+ 
+   if (!surface)
+     goto out;
+@@ -182,7 +186,15 @@ meta_surface_actor_wayland_apply_transform (ClutterActor      *actor,
+   if (!window)
+     goto out;
+ 
+-  if (!META_IS_WINDOW_WAYLAND (window))
++#ifdef HAVE_XWAYLAND
++  /* Xwayland surfaces are normally left off-grid, but in absolute mode we want
++   * them snapped to physical pixels like native Wayland surfaces. */
++  is_xwayland_absolute =
++    meta_wayland_surface_is_xwayland (root_surface) &&
++    meta_xwayland_is_scaling_factor_absolute (&root_surface->compositor->xwayland_manager);
++#endif
++
++  if (!META_IS_WINDOW_WAYLAND (window) && !is_xwayland_absolute)
+     goto out;
+ 
+   logical_monitor = meta_window_get_highest_scale_monitor (window);
+@@ -224,8 +236,34 @@ meta_surface_actor_wayland_apply_transform (ClutterActor      *actor,
+     }
+   else
+     {
++      /* Snap the actor size to the physical pixel grid. The on-display position
++       * is aligned separately: for Wayland windows by
++       * MetaSurfaceContainerActorWayland, and for absolute Xwayland windows by
++       * meta_window_actor_x11_apply_transform(). */
+       adj_actor_width = roundf (actor_width * scale) / scale;
+       adj_actor_height = roundf (actor_height * scale) / scale;
++
++#ifdef HAVE_XWAYLAND
++      if (is_xwayland_absolute)
++        {
++          float effective_scale =
++            meta_xwayland_get_effective_scale (&root_surface->compositor->xwayland_manager);
++          int buffer_width = meta_wayland_surface_get_buffer_width (surface);
++          int buffer_height = meta_wayland_surface_get_buffer_height (surface);
++
++          /* The generic snap above rounds the (already rounded) logical size
++           * again, so buffer -> logical -> physical need not land back on the
++           * buffer size, leaving a resampled row/column at some sizes. Target
++           * the exact physical size (buffer / effective_scale * scale ==
++           * buffer * factor) instead, for a clean 1:1 (or integer) blit. */
++          if (effective_scale > 0.0f && buffer_width > 0 && buffer_height > 0)
++            {
++              adj_actor_width = buffer_width / effective_scale;
++              adj_actor_height = buffer_height / effective_scale;
++            }
++        }
++#endif
++
+       adj_actor_x = allocation->x1;
+       adj_actor_y = allocation->y1;
+     }
+diff --git a/src/compositor/meta-window-actor-x11.c b/src/compositor/meta-window-actor-x11.c
+index 778a5f1835..fc5b57fc2e 100644
+--- a/src/compositor/meta-window-actor-x11.c
++++ b/src/compositor/meta-window-actor-x11.c
+@@ -40,6 +40,14 @@
+ #include "x11/meta-x11-frame.h"
+ #include "x11/window-x11-private.h"
+ 
++#ifdef HAVE_XWAYLAND
++#include <float.h>
++#include <math.h>
++#include "wayland/meta-wayland-private.h"
++#include "wayland/meta-wayland-surface-private.h"
++#include "wayland/meta-xwayland.h"
++#endif
++
+ struct _MetaWindowActorX11
+ {
+   MetaWindowActor parent;
+@@ -1433,6 +1441,66 @@ meta_window_actor_x11_dispose (GObject *object)
+   G_OBJECT_CLASS (meta_window_actor_x11_parent_class)->dispose (object);
+ }
+ 
++#ifdef HAVE_XWAYLAND
++static void
++meta_window_actor_x11_apply_transform (ClutterActor      *actor,
++                                       graphene_matrix_t *matrix)
++{
++  ClutterActorClass *parent_class =
++    CLUTTER_ACTOR_CLASS (meta_window_actor_x11_parent_class);
++  MetaWindow *window;
++  MetaWaylandSurface *surface;
++  MetaLogicalMonitor *logical_monitor;
++  ClutterActor *parent;
++  MtkRectangle monitor_rect;
++  float scale, abs_x, abs_y, rel_x, rel_y, x_off, y_off;
++
++  parent_class->apply_transform (actor, matrix);
++
++  /* In absolute Xwayland scaling mode, align the window's on-display position to
++   * the physical pixel grid so its (native-resolution) surface blits 1:1
++   * without sub-pixel resampling. This mirrors what
++   * MetaSurfaceContainerActorWayland does for native Wayland windows; the
++   * matching size snap lives in meta_surface_actor_wayland_apply_transform().
++   * It is done on the window actor (not the surface actor) because only the
++   * window actor's transform is recomputed as the window moves. */
++  window = meta_window_actor_get_meta_window (META_WINDOW_ACTOR (actor));
++  if (!window)
++    return;
++
++  surface = meta_window_get_wayland_surface (window);
++  if (!surface || !meta_wayland_surface_is_xwayland (surface))
++    return;
++
++  if (!meta_xwayland_is_scaling_factor_absolute (&surface->compositor->xwayland_manager))
++    return;
++
++  logical_monitor = meta_window_get_highest_scale_monitor (window);
++  if (!logical_monitor)
++    return;
++
++  scale = meta_logical_monitor_get_scale (logical_monitor);
++  monitor_rect = meta_logical_monitor_get_layout (logical_monitor);
++
++  parent = clutter_actor_get_parent (actor);
++  abs_x = (parent ? clutter_actor_get_x (parent) : 0.0f) +
++          clutter_actor_get_x (actor);
++  abs_y = (parent ? clutter_actor_get_y (parent) : 0.0f) +
++          clutter_actor_get_y (actor);
++
++  rel_x = abs_x - monitor_rect.x;
++  rel_y = abs_y - monitor_rect.y;
++
++  x_off = roundf (rel_x * scale) / scale - rel_x;
++  y_off = roundf (rel_y * scale) / scale - rel_y;
++
++  if (!G_APPROX_VALUE (x_off, 0.0, FLT_EPSILON) ||
++      !G_APPROX_VALUE (y_off, 0.0, FLT_EPSILON))
++    graphene_matrix_translate (matrix,
++                               &GRAPHENE_POINT3D_INIT (x_off, y_off, 0.0));
++}
++#endif
++
+ static void
+ meta_window_actor_x11_class_init (MetaWindowActorX11Class *klass)
+ {
+@@ -1455,6 +1523,9 @@ meta_window_actor_x11_class_init (MetaWindowActorX11Class *klass)
+ 
+   actor_class->paint = meta_window_actor_x11_paint;
+   actor_class->get_paint_volume = meta_window_actor_x11_get_paint_volume;
++#ifdef HAVE_XWAYLAND
++  actor_class->apply_transform = meta_window_actor_x11_apply_transform;
++#endif
+ 
+   object_class->constructed = meta_window_actor_x11_constructed;
+   object_class->dispose = meta_window_actor_x11_dispose;
+diff --git a/src/wayland/meta-wayland-actor-surface.c b/src/wayland/meta-wayland-actor-surface.c
+index f4a833181a..7480fde11b 100644
+--- a/src/wayland/meta-wayland-actor-surface.c
++++ b/src/wayland/meta-wayland-actor-surface.c
+@@ -188,6 +188,15 @@ meta_wayland_actor_surface_real_sync_actor_state (MetaWaylandActorSurface *actor
+     stex,
+     meta_wayland_surface_is_xwayland (surface) &&
+     meta_xwayland_is_scaling_nearest (&surface->compositor->xwayland_manager));
++
++  /* In absolute mode the surface actor's physical-pixel snap
++   * (meta_surface_actor_wayland_apply_transform()) depends on the committed
++   * buffer size. A new buffer (e.g. a resize) does not invalidate the cached
++   * transform on its own, so force it here to avoid a stale snap that would
++   * leave the surface off-grid until the next relayout. */
++  if (meta_wayland_surface_is_xwayland (surface) &&
++      meta_xwayland_is_scaling_factor_absolute (&surface->compositor->xwayland_manager))
++    clutter_actor_invalidate_transform (CLUTTER_ACTOR (surface_actor));
+ #endif
+ 
+   buffer = meta_wayland_surface_get_buffer (surface);
+-- 
+2.55.0
+
