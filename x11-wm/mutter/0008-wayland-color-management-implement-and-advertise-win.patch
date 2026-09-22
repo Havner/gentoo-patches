@@ -1,0 +1,121 @@
+From 00654404aeca8d9bb85614ed09d0300e44af65f8 Mon Sep 17 00:00:00 2001
+From: Lukasz Pawelczyk <havner@gmail.com>
+Date: Tue, 22 Sep 2026 16:22:06 +0200
+Subject: [PATCH 8/8] wayland/color-management: implement and advertise
+ windows_bt2100
+
+Add a create_windows_bt2100 handler that builds a Windows-BT2100 (HDR10)
+image description: BT.2020 primaries, PQ (ST.2084) transfer function, and
+explicit luminance { min 0.005, max 10000, ref 203 } nits, matching the
+KWin reference values. Bump the advertised wp_color_manager_v1 version to
+3 (the request is a v3 addition; the system wayland-protocols already
+ships v3), wire the handler as the ninth interface entry, and advertise
+WP_COLOR_MANAGER_V1_FEATURE_WINDOWS_BT2100 for clients binding at v3.
+
+This lets Proton's winewayland tag PQ swapchains (e.g. Cyberpunk 2077's
+HDR10 mode) via PASS_THROUGH instead of presenting them untagged, which
+the compositor would otherwise decode through the wrong transfer function.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/wayland/meta-wayland-color-management.c | 56 +++++++++++++++++++++
+ src/wayland/meta-wayland-versions.h         |  2 +-
+ 2 files changed, 57 insertions(+), 1 deletion(-)
+
+diff --git a/src/wayland/meta-wayland-color-management.c b/src/wayland/meta-wayland-color-management.c
+index 2ff24342f7..e46c7d71d0 100644
+--- a/src/wayland/meta-wayland-color-management.c
++++ b/src/wayland/meta-wayland-color-management.c
+@@ -1865,6 +1865,56 @@ color_manager_create_windows_scrgb (struct wl_client   *client,
+                                   image_description_destructor);
+ }
+ 
++static void
++color_manager_create_windows_bt2100 (struct wl_client   *client,
++                                     struct wl_resource *resource,
++                                     uint32_t            id)
++{
++  MetaWaylandColorManager *color_manager = wl_resource_get_user_data (resource);
++  ClutterContext *clutter_context = get_clutter_context (color_manager);
++  struct wl_resource *image_desc_resource;
++  g_autoptr (ClutterColorState) color_state = NULL;
++  g_autoptr (MetaWaylandImageDescription) image_desc = NULL;
++  ClutterColorimetry colorimetry = {
++    .type = CLUTTER_COLORIMETRY_TYPE_COLORSPACE,
++    .colorspace = CLUTTER_COLORSPACE_BT2020,
++  };
++  ClutterEOTF eotf = {
++    .type = CLUTTER_EOTF_TYPE_NAMED,
++    .tf_name = CLUTTER_TRANSFER_FUNCTION_PQ,
++  };
++  ClutterLuminance lum = {
++    .type = CLUTTER_LUMINANCE_TYPE_EXPLICIT,
++    .min = 0.005f,
++    .max = 10000.0f,
++    .ref = 203.0f,
++    .mastering_max = 10000.0f,
++  };
++
++  image_desc_resource =
++    wl_resource_create (client,
++                        &wp_image_description_v1_interface,
++                        wl_resource_get_version (resource),
++                        id);
++
++  color_state =
++    clutter_color_state_params_new_from_primitives (clutter_context,
++                                                    colorimetry,
++                                                    eotf,
++                                                    lum);
++
++  image_desc = meta_wayland_image_description_new (color_manager,
++                                                   image_desc_resource);
++  meta_wayland_image_description_set_ready (image_desc,
++                                            color_state,
++                                            META_WAYLAND_IMAGE_DESCRIPTION_FLAGS_DEFAULT);
++
++  wl_resource_set_implementation (image_desc_resource,
++                                  &meta_wayland_image_description_interface,
++                                  g_steal_pointer (&image_desc),
++                                  image_description_destructor);
++}
++
+ static void
+ color_manager_get_image_description (struct wl_client   *client,
+                                      struct wl_resource *resource,
+@@ -1893,6 +1943,11 @@ color_manager_send_supported_events (struct wl_resource *resource)
+                                               WP_COLOR_MANAGER_V1_FEATURE_SET_LUMINANCES);
+   wp_color_manager_v1_send_supported_feature (resource,
+                                               WP_COLOR_MANAGER_V1_FEATURE_WINDOWS_SCRGB);
++  if (wl_resource_get_version (resource) >= 3)
++    {
++      wp_color_manager_v1_send_supported_feature (resource,
++                                                  WP_COLOR_MANAGER_V1_FEATURE_WINDOWS_BT2100);
++    }
+   wp_color_manager_v1_send_supported_tf_named (resource,
+                                                WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22);
+   wp_color_manager_v1_send_supported_tf_named (resource,
+@@ -1941,6 +1996,7 @@ static const struct wp_color_manager_v1_interface
+   color_manager_create_parametric_creator,
+   color_manager_create_windows_scrgb,
+   color_manager_get_image_description,
++  color_manager_create_windows_bt2100,
+ };
+ 
+ static void
+diff --git a/src/wayland/meta-wayland-versions.h b/src/wayland/meta-wayland-versions.h
+index 9da5e1eeeb..ed8a7326cf 100644
+--- a/src/wayland/meta-wayland-versions.h
++++ b/src/wayland/meta-wayland-versions.h
+@@ -57,7 +57,7 @@
+ #define META_WP_SINGLE_PIXEL_BUFFER_V1_VERSION 1
+ #define META_MUTTER_X11_INTEROP_VERSION 1
+ #define META_WP_FRACTIONAL_SCALE_VERSION 1
+-#define META_WP_COLOR_MANAGEMENT_VERSION 2
++#define META_WP_COLOR_MANAGEMENT_VERSION 3
+ #define META_XDG_DIALOG_VERSION 1
+ #define META_WP_DRM_LEASE_DEVICE_V1_VERSION 1
+ #define META_XDG_SESSION_MANAGER_V1_VERSION 1
+-- 
+2.55.0
+
