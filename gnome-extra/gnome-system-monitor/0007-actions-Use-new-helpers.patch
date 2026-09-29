@@ -1,0 +1,207 @@
+From e8e0e5a04828269c75f7eb82b84b2190390f6729 Mon Sep 17 00:00:00 2001
+From: Zander Brown <zbrown@gnome.org>
+Date: Wed, 16 Sep 2026 02:57:03 +0100
+Subject: [PATCH 07/11] actions: Use new helpers
+
+---
+ src/actions/gsm_gksu.c    | 54 +++++++------------------------------
+ src/actions/gsm_gnomesu.c | 56 +++++++--------------------------------
+ src/actions/meson.build   |  7 ++++-
+ 3 files changed, 24 insertions(+), 93 deletions(-)
+
+diff --git a/src/actions/gsm_gksu.c b/src/actions/gsm_gksu.c
+index f9f02e17..73e690d7 100644
+--- a/src/actions/gsm_gksu.c
++++ b/src/actions/gsm_gksu.c
+@@ -7,59 +7,23 @@
+ #include <glib.h>
+ #include <gmodule.h>
+ 
++#include "gsm-module-loader.h"
++
+ #include "gsm_gksu.h"
+ 
+ 
+ static gboolean (*gksu_run) (const char *, GError **);
+ 
+ 
+-static inline GModule *
+-load_gksu_module (void)
+-{
+-  g_autoptr (GError) error = NULL;
+-  GModule *module =
+-    g_module_open_full ("libgksu2.so",
+-                        G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL,
+-                        &error);
+-
+-  if (error) {
+-    g_debug ("Could not load libgksu2.so: %s", error->message);
+-    goto fail;
+-  }
+-
+-  if (!module) {
+-    g_debug ("Could not load libgksu2.so");
+-    goto fail;
+-  }
+-
+-  if (!g_module_symbol (module, "gksu_run", (gpointer *) &gksu_run)) {
+-    g_debug ("Could not load gksu_run from libgksu2.so");
+-    goto fail;
+-  }
+-
+-  g_debug ("Loaded gksu_run from libgksu2.so");
++GSM_DEFINE_MODULE_LOADER (gsm, gksu, "libgksu2.so")
+ 
+-  return g_steal_pointer (&module);
+ 
+-fail:
+-  g_clear_pointer (&module, g_module_close);
+-
+-  return NULL;
+-}
+-
+-
+-static inline GModule *
+-get_gksu_module (void)
++static inline GsmModuleInitResult
++gsm_gksu_init_module (GModule *module)
+ {
+-  static GModule *module = NULL;
+-
+-  if (g_once_init_enter_pointer (&module)) {
+-    GModule *gksu = load_gksu_module ();
+-
+-    g_once_init_leave_pointer (&module, g_steal_pointer (&gksu));
+-  }
++  GSM_MODULE_REQUIRE_SYMBOL (module, "libgksu2.so", gksu_run);
+ 
+-  return module;
++  return GSM_MODULE_INIT_SUCCESS;
+ }
+ 
+ 
+@@ -68,7 +32,7 @@ gsm_gksu_create_root_password_dialog (const char *command)
+ {
+   g_autoptr (GError) e = NULL;
+ 
+-  g_return_val_if_fail (get_gksu_module () != NULL, FALSE);
++  g_return_val_if_fail (gsm_gksu_get_or_load_module (), FALSE);
+ 
+   /* Returns FALSE or TRUE on success, depends on version ... */
+   gksu_run (command, &e);
+@@ -89,5 +53,5 @@ gsm_gksu_create_root_password_dialog (const char *command)
+ gboolean
+ procman_has_gksu (void)
+ {
+-  return get_gksu_module () != NULL;
++  return gsm_gksu_get_or_load_module ();
+ }
+diff --git a/src/actions/gsm_gnomesu.c b/src/actions/gsm_gnomesu.c
+index feb92a46..19e3350b 100644
+--- a/src/actions/gsm_gnomesu.c
++++ b/src/actions/gsm_gnomesu.c
+@@ -7,68 +7,30 @@
+ #include <glib.h>
+ #include <gmodule.h>
+ 
++#include "gsm-module-loader.h"
++
+ #include "gsm_gnomesu.h"
+ 
+ 
+ gboolean (*gnomesu_exec) (const char *commandline);
+ 
+ 
+-static inline GModule *
+-load_gnomesu_module (void)
+-{
+-  g_autoptr (GError) error = NULL;
+-  GModule *module =
+-    g_module_open_full ("libgnomesu.so.0",
+-                        G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL,
+-                        &error);
+-
+-  if (error) {
+-    g_debug ("Could not load libgnomesu.so.0: %s", error->message);
+-    goto fail;
+-  }
+-
+-  if (!module) {
+-    g_debug ("Could not load libgnomesu.so.0");
+-    goto fail;
+-  }
+-
+-  if (!g_module_symbol (module,
+-                        "gnomesu_exec",
+-                        (gpointer *) &gnomesu_exec)) {
+-    g_debug ("Could not load gnomesu_exec from libgnomesu.so.0");
+-    goto fail;
+-  }
+-
+-  g_debug ("Loaded gnomesu_exec from libgnomesu.so.0");
++GSM_DEFINE_MODULE_LOADER (gsm, gnomesu, "libgnomesu.so.0")
+ 
+-  return g_steal_pointer (&module);
+ 
+-fail:
+-  g_clear_pointer (&module, g_module_close);
+-
+-  return NULL;
+-}
+-
+-
+-static inline GModule *
+-get_gnomesu_module (void)
++static inline GsmModuleInitResult
++gsm_gnomesu_init_module (GModule *module)
+ {
+-  static GModule *module = NULL;
+-
+-  if (g_once_init_enter_pointer (&module)) {
+-    GModule *gksu = load_gnomesu_module ();
+-
+-    g_once_init_leave_pointer (&module, g_steal_pointer (&gksu));
+-  }
++  GSM_MODULE_REQUIRE_SYMBOL (module, "libgnomesu.so.0", gnomesu_exec);
+ 
+-  return module;
++  return GSM_MODULE_INIT_SUCCESS;
+ }
+ 
+ 
+ gboolean
+ gsm_gnomesu_create_root_password_dialog (const char *command)
+ {
+-  g_return_val_if_fail (get_gnomesu_module () != NULL, FALSE);
++  g_return_val_if_fail (gsm_gnomesu_get_or_load_module (), FALSE);
+ 
+   return gnomesu_exec (command);
+ }
+@@ -77,5 +39,5 @@ gsm_gnomesu_create_root_password_dialog (const char *command)
+ gboolean
+ procman_has_gnomesu (void)
+ {
+-  return get_gnomesu_module () != NULL;
++  return gsm_gnomesu_get_or_load_module ();
+ }
+diff --git a/src/actions/meson.build b/src/actions/meson.build
+index d7b50ebf..a375ed63 100644
+--- a/src/actions/meson.build
++++ b/src/actions/meson.build
+@@ -10,7 +10,12 @@ libgsm_actions_sources = [
+   'gsm-actions.h',
+ ]
+ 
+-libgsm_actions_dependencies = [glib, gmodule, libgsm_actions_impl_dep]
++libgsm_actions_dependencies = [
++  glib,
++  gmodule,
++  libgsm_actions_impl_dep,
++  libgsm_utils_dep,
++]
+ 
+ libgsm_actions = static_library(
+   'gsm-actions',
+-- 
+2.55.0
+

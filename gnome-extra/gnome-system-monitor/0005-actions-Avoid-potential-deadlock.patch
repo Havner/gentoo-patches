@@ -1,0 +1,208 @@
+From 3c8456625310cb95fc564e6bab563e0dbac5c7e9 Mon Sep 17 00:00:00 2001
+From: Zander Brown <zbrown@gnome.org>
+Date: Tue, 15 Sep 2026 04:10:48 +0100
+Subject: [PATCH 05/11] actions: Avoid potential deadlock
+
+---
+ src/actions/gsm_gksu.c    | 63 ++++++++++++++++++++++++++-----------
+ src/actions/gsm_gnomesu.c | 66 +++++++++++++++++++++++++++------------
+ 2 files changed, 90 insertions(+), 39 deletions(-)
+
+diff --git a/src/actions/gsm_gksu.c b/src/actions/gsm_gksu.c
+index 91024d72..f9f02e17 100644
+--- a/src/actions/gsm_gksu.c
++++ b/src/actions/gsm_gksu.c
+@@ -13,31 +13,53 @@
+ static gboolean (*gksu_run) (const char *, GError **);
+ 
+ 
+-static inline gboolean
+-load_gksu (void)
++static inline GModule *
++load_gksu_module (void)
+ {
+-  static GModule *module = NULL;
++  g_autoptr (GError) error = NULL;
++  GModule *module =
++    g_module_open_full ("libgksu2.so",
++                        G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL,
++                        &error);
++
++  if (error) {
++    g_debug ("Could not load libgksu2.so: %s", error->message);
++    goto fail;
++  }
+ 
+-  if (g_once_init_enter_pointer (&module)) {
+-    GModule *gksu =
+-      g_module_open ("libgksu2.so", G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
++  if (!module) {
++    g_debug ("Could not load libgksu2.so");
++    goto fail;
++  }
+ 
+-    if (!gksu) {
+-      g_debug ("Could not load libgksu2.so");
+-      return FALSE;
+-    }
++  if (!g_module_symbol (module, "gksu_run", (gpointer *) &gksu_run)) {
++    g_debug ("Could not load gksu_run from libgksu2.so");
++    goto fail;
++  }
+ 
+-    if (!g_module_symbol (gksu, "gksu_run", (gpointer *) &gksu_run)) {
+-      g_debug ("Could not load gksu_run from libgksu2.so");
+-      return FALSE;
+-    } else {
+-      g_debug ("Loaded gksu_run from libgksu2.so");
+-    }
++  g_debug ("Loaded gksu_run from libgksu2.so");
++
++  return g_steal_pointer (&module);
++
++fail:
++  g_clear_pointer (&module, g_module_close);
++
++  return NULL;
++}
++
++
++static inline GModule *
++get_gksu_module (void)
++{
++  static GModule *module = NULL;
++
++  if (g_once_init_enter_pointer (&module)) {
++    GModule *gksu = load_gksu_module ();
+ 
+     g_once_init_leave_pointer (&module, g_steal_pointer (&gksu));
+   }
+ 
+-  return module != NULL;
++  return module;
+ }
+ 
+ 
+@@ -46,6 +68,8 @@ gsm_gksu_create_root_password_dialog (const char *command)
+ {
+   g_autoptr (GError) e = NULL;
+ 
++  g_return_val_if_fail (get_gksu_module () != NULL, FALSE);
++
+   /* Returns FALSE or TRUE on success, depends on version ... */
+   gksu_run (command, &e);
+ 
+@@ -56,7 +80,8 @@ gsm_gksu_create_root_password_dialog (const char *command)
+     return FALSE;
+   }
+ 
+-  g_message ("gksu_run did fine\n");
++  g_message ("gksu_run did fine");
++
+   return TRUE;
+ }
+ 
+@@ -64,5 +89,5 @@ gsm_gksu_create_root_password_dialog (const char *command)
+ gboolean
+ procman_has_gksu (void)
+ {
+-  return load_gksu ();
++  return get_gksu_module () != NULL;
+ }
+diff --git a/src/actions/gsm_gnomesu.c b/src/actions/gsm_gnomesu.c
+index 081a045e..feb92a46 100644
+--- a/src/actions/gsm_gnomesu.c
++++ b/src/actions/gsm_gnomesu.c
+@@ -13,37 +13,63 @@
+ gboolean (*gnomesu_exec) (const char *commandline);
+ 
+ 
+-static inline gboolean
+-load_gnomesu (void)
++static inline GModule *
++load_gnomesu_module (void)
++{
++  g_autoptr (GError) error = NULL;
++  GModule *module =
++    g_module_open_full ("libgnomesu.so.0",
++                        G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL,
++                        &error);
++
++  if (error) {
++    g_debug ("Could not load libgnomesu.so.0: %s", error->message);
++    goto fail;
++  }
++
++  if (!module) {
++    g_debug ("Could not load libgnomesu.so.0");
++    goto fail;
++  }
++
++  if (!g_module_symbol (module,
++                        "gnomesu_exec",
++                        (gpointer *) &gnomesu_exec)) {
++    g_debug ("Could not load gnomesu_exec from libgnomesu.so.0");
++    goto fail;
++  }
++
++  g_debug ("Loaded gnomesu_exec from libgnomesu.so.0");
++
++  return g_steal_pointer (&module);
++
++fail:
++  g_clear_pointer (&module, g_module_close);
++
++  return NULL;
++}
++
++
++static inline GModule *
++get_gnomesu_module (void)
+ {
+   static GModule *module = NULL;
+ 
+   if (g_once_init_enter_pointer (&module)) {
+-    GModule *gnomesu =
+-      g_module_open ("libgnomesu.so.0", G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
+-
+-    if (!gnomesu) {
+-      g_debug ("Could not load libgnomesu.so.0");
+-      return FALSE;
+-    }
+-
+-    if (!g_module_symbol (gnomesu, "gnomesu_exec", (gpointer *) &gnomesu_exec)) {
+-      g_debug ("Could not load gnomesu_exec from libgnomesu.so.0");
+-      return FALSE;
+-    } else {
+-      g_debug ("Loaded gnomesu_exec from libgnomesu.so.0");
+-    }
+-
+-    g_once_init_leave_pointer (&module, g_steal_pointer (&gnomesu));
++    GModule *gksu = load_gnomesu_module ();
++
++    g_once_init_leave_pointer (&module, g_steal_pointer (&gksu));
+   }
+ 
+-  return module != NULL;
++  return module;
+ }
+ 
+ 
+ gboolean
+ gsm_gnomesu_create_root_password_dialog (const char *command)
+ {
++  g_return_val_if_fail (get_gnomesu_module () != NULL, FALSE);
++
+   return gnomesu_exec (command);
+ }
+ 
+@@ -51,5 +77,5 @@ gsm_gnomesu_create_root_password_dialog (const char *command)
+ gboolean
+ procman_has_gnomesu (void)
+ {
+-  return load_gnomesu ();
++  return get_gnomesu_module () != NULL;
+ }
+-- 
+2.55.0
+

@@ -1,0 +1,29 @@
+From fbf55e94586f2113f38026ceb86447c701a21174 Mon Sep 17 00:00:00 2001
+From: Zander Brown <zbrown@gnome.org>
+Date: Mon, 14 Sep 2026 15:53:41 +0100
+Subject: [PATCH 03/11] selinux: Be extra paranoid about GModule
+
+Fixes: https://gitlab.gnome.org/GNOME/gnome-system-monitor/-/work_items/381
+---
+ src/selinux/gsm-selinux.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/selinux/gsm-selinux.c b/src/selinux/gsm-selinux.c
+index e3d2fe93..ed86ed7f 100644
+--- a/src/selinux/gsm-selinux.c
++++ b/src/selinux/gsm-selinux.c
+@@ -23,6 +23,11 @@ load_selinux (void)
+     GModule *selinux = g_module_open ("libselinux.so.1",
+                                       G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
+ 
++    if (!selinux) {
++      g_debug ("Could not load libselinux.so.0");
++      return FALSE;
++    }
++
+     if (!g_module_symbol (selinux, "getpidcon", (gpointer *) &getpidcon)) {
+       g_debug ("Could not load getpidcon from libselinux.so.0");
+       return FALSE;
+-- 
+2.55.0
+
