@@ -1,7 +1,7 @@
-From 4c429b6fead8a0ab3f4e20422b29c48bfcd734bc Mon Sep 17 00:00:00 2001
+From 21b32b1303c02402d7af9f34d3bc1d59d62a52db Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 20:12:24 +0200
-Subject: [PATCH 6/6] compositor: Snap absolute-scaled Xwayland surfaces to the
+Subject: [PATCH 6/8] compositor: Snap absolute-scaled Xwayland surfaces to the
  physical pixel grid
 
 In absolute Xwayland scaling mode a window renders at (a multiple of) its
@@ -41,7 +41,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
  3 files changed, 119 insertions(+), 1 deletion(-)
 
 diff --git a/src/compositor/meta-surface-actor-wayland.c b/src/compositor/meta-surface-actor-wayland.c
-index ec607260ca..5416e9f074 100644
+index 129783bd54..28db8fcbeb 100644
 --- a/src/compositor/meta-surface-actor-wayland.c
 +++ b/src/compositor/meta-surface-actor-wayland.c
 @@ -36,6 +36,9 @@
@@ -115,10 +115,10 @@ index ec607260ca..5416e9f074 100644
        adj_actor_y = allocation->y1;
      }
 diff --git a/src/compositor/meta-window-actor-x11.c b/src/compositor/meta-window-actor-x11.c
-index 778a5f1835..fc5b57fc2e 100644
+index 9e16b2682a..8817e605b8 100644
 --- a/src/compositor/meta-window-actor-x11.c
 +++ b/src/compositor/meta-window-actor-x11.c
-@@ -40,6 +40,14 @@
+@@ -41,6 +41,14 @@
  #include "x11/meta-x11-frame.h"
  #include "x11/window-x11-private.h"
  
@@ -133,7 +133,7 @@ index 778a5f1835..fc5b57fc2e 100644
  struct _MetaWindowActorX11
  {
    MetaWindowActor parent;
-@@ -1433,6 +1441,66 @@ meta_window_actor_x11_dispose (GObject *object)
+@@ -1431,6 +1439,66 @@ meta_window_actor_x11_dispose (GObject *object)
    G_OBJECT_CLASS (meta_window_actor_x11_parent_class)->dispose (object);
  }
  
@@ -200,7 +200,7 @@ index 778a5f1835..fc5b57fc2e 100644
  static void
  meta_window_actor_x11_class_init (MetaWindowActorX11Class *klass)
  {
-@@ -1455,6 +1523,9 @@ meta_window_actor_x11_class_init (MetaWindowActorX11Class *klass)
+@@ -1453,6 +1521,9 @@ meta_window_actor_x11_class_init (MetaWindowActorX11Class *klass)
  
    actor_class->paint = meta_window_actor_x11_paint;
    actor_class->get_paint_volume = meta_window_actor_x11_get_paint_volume;
@@ -211,7 +211,7 @@ index 778a5f1835..fc5b57fc2e 100644
    object_class->constructed = meta_window_actor_x11_constructed;
    object_class->dispose = meta_window_actor_x11_dispose;
 diff --git a/src/wayland/meta-wayland-actor-surface.c b/src/wayland/meta-wayland-actor-surface.c
-index f4a833181a..7480fde11b 100644
+index 1bda16710f..0095e66769 100644
 --- a/src/wayland/meta-wayland-actor-surface.c
 +++ b/src/wayland/meta-wayland-actor-surface.c
 @@ -188,6 +188,15 @@ meta_wayland_actor_surface_real_sync_actor_state (MetaWaylandActorSurface *actor

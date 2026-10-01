@@ -1,7 +1,7 @@
-From 76b83e9902161b7cb75eb66d5eece2ffc7d66cda Mon Sep 17 00:00:00 2001
+From 89172c2bb1fac08a08fd95bdba5cd2a3af9a467b Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Tue, 22 Sep 2026 16:20:31 +0200
-Subject: [PATCH 7/7] wayland/color-management: implement and advertise
+Subject: [PATCH 7/8] wayland/color-management: implement and advertise
  windows_scrgb
 
 Replace the create_windows_scrgb stub (which posted UNSUPPORTED_FEATURE)
@@ -18,10 +18,10 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
  1 file changed, 45 insertions(+), 3 deletions(-)
 
 diff --git a/src/wayland/meta-wayland-color-management.c b/src/wayland/meta-wayland-color-management.c
-index 40ac1ee9b1..2ff24342f7 100644
+index 555881369b..ef2b363b37 100644
 --- a/src/wayland/meta-wayland-color-management.c
 +++ b/src/wayland/meta-wayland-color-management.c
-@@ -1820,9 +1820,49 @@ color_manager_create_windows_scrgb (struct wl_client   *client,
+@@ -1813,9 +1813,49 @@ color_manager_create_windows_scrgb (struct wl_client   *client,
                                      struct wl_resource *resource,
                                      uint32_t            id)
  {
@@ -74,7 +74,7 @@ index 40ac1ee9b1..2ff24342f7 100644
  }
  
  static void
-@@ -1851,6 +1891,8 @@ color_manager_send_supported_events (struct wl_resource *resource)
+@@ -1844,6 +1884,8 @@ color_manager_send_supported_events (struct wl_resource *resource)
                                                WP_COLOR_MANAGER_V1_FEATURE_SET_TF_POWER);
    wp_color_manager_v1_send_supported_feature (resource,
                                                WP_COLOR_MANAGER_V1_FEATURE_SET_LUMINANCES);

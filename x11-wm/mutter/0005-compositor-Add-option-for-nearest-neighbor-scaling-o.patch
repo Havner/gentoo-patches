@@ -1,7 +1,7 @@
-From 0885f3e220f387dbfd62c74851789e44cdf1b28c Mon Sep 17 00:00:00 2001
+From 161fefba50f58dc98d5e0dcc5dd439d7106a789d Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 15:40:01 +0200
-Subject: [PATCH 5/6] compositor: Add option for nearest-neighbor scaling of
+Subject: [PATCH 5/8] compositor: Add option for nearest-neighbor scaling of
  Xwayland windows
 
 Add a boolean setting, org.gnome.mutter.wayland xwayland-scaling-nearest,
@@ -25,10 +25,10 @@ always use linear filtering.
  8 files changed, 79 insertions(+), 1 deletion(-)
 
 diff --git a/data/org.gnome.mutter.wayland.gschema.xml.in b/data/org.gnome.mutter.wayland.gschema.xml.in
-index 9cf8e77288..7bc17deeda 100644
+index c7626d0b96..4871cc1d85 100644
 --- a/data/org.gnome.mutter.wayland.gschema.xml.in
 +++ b/data/org.gnome.mutter.wayland.gschema.xml.in
-@@ -176,6 +176,18 @@
+@@ -178,6 +178,18 @@
        </description>
      </key>
  
@@ -61,10 +61,10 @@ index 04dde0483f..6c10e65933 100644
  
  void meta_settings_set_privacy_screen_enabled (MetaSettings *settings,
 diff --git a/src/backends/meta-settings.c b/src/backends/meta-settings.c
-index e9af376257..b4d823fbfd 100644
+index 0ae7652fdd..056427850f 100644
 --- a/src/backends/meta-settings.c
 +++ b/src/backends/meta-settings.c
-@@ -84,6 +84,7 @@ struct _MetaSettings
+@@ -85,6 +85,7 @@ struct _MetaSettings
  
    float xwayland_scaling_factor;
    gboolean xwayland_scaling_factor_absolute;
@@ -72,7 +72,7 @@ index e9af376257..b4d823fbfd 100644
  };
  
  G_DEFINE_TYPE (MetaSettings, meta_settings, G_TYPE_OBJECT)
-@@ -462,6 +463,14 @@ update_xwayland_scaling_factor_absolute (MetaSettings *settings)
+@@ -436,6 +437,14 @@ update_xwayland_scaling_factor_absolute (MetaSettings *settings)
                              "xwayland-scaling-factor-absolute");
  }
  
@@ -87,7 +87,7 @@ index e9af376257..b4d823fbfd 100644
  static void
  wayland_settings_changed (GSettings    *wayland_settings,
                            gchar        *key,
-@@ -494,6 +503,10 @@ wayland_settings_changed (GSettings    *wayland_settings,
+@@ -468,6 +477,10 @@ wayland_settings_changed (GSettings    *wayland_settings,
        update_xwayland_scaling_factor_absolute (settings);
        g_signal_emit (settings, signals[XWAYLAND_SCALING_FACTOR_CHANGED], 0);
      }
@@ -98,7 +98,7 @@ index e9af376257..b4d823fbfd 100644
  }
  
  void
-@@ -544,6 +557,12 @@ meta_settings_is_xwayland_scaling_factor_absolute (MetaSettings *settings)
+@@ -518,6 +531,12 @@ meta_settings_is_xwayland_scaling_factor_absolute (MetaSettings *settings)
    return settings->xwayland_scaling_factor_absolute;
  }
  
@@ -111,7 +111,7 @@ index e9af376257..b4d823fbfd 100644
  gboolean
  meta_settings_is_privacy_screen_enabled (MetaSettings *settings)
  {
-@@ -642,6 +661,7 @@ meta_settings_init (MetaSettings *settings)
+@@ -626,6 +645,7 @@ meta_settings_init (MetaSettings *settings)
    update_xwayland_allow_byte_swapped_clients (settings);
    update_xwayland_scaling_factor (settings);
    update_xwayland_scaling_factor_absolute (settings);
@@ -120,10 +120,10 @@ index e9af376257..b4d823fbfd 100644
  
  static void
 diff --git a/src/compositor/meta-shaped-texture-private.h b/src/compositor/meta-shaped-texture-private.h
-index 4e077506b2..83f3408969 100644
+index 5cd10f5fea..bd49152b13 100644
 --- a/src/compositor/meta-shaped-texture-private.h
 +++ b/src/compositor/meta-shaped-texture-private.h
-@@ -57,6 +57,8 @@ void meta_shaped_texture_set_viewport_dst_size (MetaShapedTexture *stex,
+@@ -55,6 +55,8 @@ void meta_shaped_texture_set_viewport_dst_size (MetaShapedTexture *stex,
  void meta_shaped_texture_reset_viewport_dst_size (MetaShapedTexture *stex);
  void meta_shaped_texture_set_buffer_scale (MetaShapedTexture *stex,
                                             int                buffer_scale);
@@ -133,10 +133,10 @@ index 4e077506b2..83f3408969 100644
  gboolean meta_shaped_texture_update_area (MetaShapedTexture  *stex,
                                            const MtkRectangle *area,
 diff --git a/src/compositor/meta-shaped-texture.c b/src/compositor/meta-shaped-texture.c
-index 5a67cea790..27b4eb2c46 100644
+index f9153d7962..4b0d0f2f72 100644
 --- a/src/compositor/meta-shaped-texture.c
 +++ b/src/compositor/meta-shaped-texture.c
-@@ -127,6 +127,7 @@ struct _MetaShapedTexture
+@@ -120,6 +120,7 @@ struct _MetaShapedTexture
    int buffer_scale;
  
    guint create_mipmaps : 1;
@@ -144,7 +144,7 @@ index 5a67cea790..27b4eb2c46 100644
  
    MetaMultiTextureAlphaMode premult;
    MetaMultiTextureCoefficients coeffs;
-@@ -895,7 +896,10 @@ do_paint_content (MetaShapedTexture   *stex,
+@@ -781,7 +782,10 @@ do_paint_content (MetaShapedTexture   *stex,
    else
      {
        min_filter = COGL_PIPELINE_FILTER_LINEAR;
@@ -156,7 +156,7 @@ index 5a67cea790..27b4eb2c46 100644
  
        /* If we're painting a texture below half its native resolution
         * then mipmapping is required to avoid aliasing. If it's above
-@@ -1180,6 +1184,21 @@ meta_shaped_texture_set_create_mipmaps (MetaShapedTexture *stex,
+@@ -1077,6 +1081,21 @@ meta_shaped_texture_set_create_mipmaps (MetaShapedTexture *stex,
      }
  }
  
@@ -179,7 +179,7 @@ index 5a67cea790..27b4eb2c46 100644
  meta_shaped_texture_set_mask_texture (MetaShapedTexture *stex,
                                        CoglTexture       *mask_texture)
 diff --git a/src/wayland/meta-wayland-actor-surface.c b/src/wayland/meta-wayland-actor-surface.c
-index a71747e97f..f4a833181a 100644
+index d1e1d7709b..1bda16710f 100644
 --- a/src/wayland/meta-wayland-actor-surface.c
 +++ b/src/wayland/meta-wayland-actor-surface.c
 @@ -30,6 +30,7 @@
@@ -207,10 +207,10 @@ index a71747e97f..f4a833181a 100644
    if (buffer)
      {
 diff --git a/src/wayland/meta-xwayland.c b/src/wayland/meta-xwayland.c
-index 5d251ae4bc..a5cf56f6cd 100644
+index 36b08e154d..780cf44fe7 100644
 --- a/src/wayland/meta-xwayland.c
 +++ b/src/wayland/meta-xwayland.c
-@@ -1431,6 +1431,17 @@ meta_xwayland_is_scaling_factor_absolute (MetaXWaylandManager *manager)
+@@ -1451,6 +1451,17 @@ meta_xwayland_is_scaling_factor_absolute (MetaXWaylandManager *manager)
    return meta_settings_is_xwayland_scaling_factor_absolute (settings);
  }
  
