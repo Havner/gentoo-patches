@@ -1,4 +1,4 @@
-From 161fefba50f58dc98d5e0dcc5dd439d7106a789d Mon Sep 17 00:00:00 2001
+From 369844ded905ee0d92a51e5f47e9c8cf60e5d2c9 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 15:40:01 +0200
 Subject: [PATCH 5/8] compositor: Add option for nearest-neighbor scaling of

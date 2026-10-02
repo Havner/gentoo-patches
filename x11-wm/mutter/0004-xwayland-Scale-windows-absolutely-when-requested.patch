@@ -1,4 +1,4 @@
-From b8df1f5ad6cb66c474ad600c1b390feecafde42f Mon Sep 17 00:00:00 2001
+From a79dc119079b6f8381f18eb18f3858dc5d8bf2f5 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 16:15:13 +0200
 Subject: [PATCH 4/8] xwayland: Scale windows absolutely when requested
@@ -17,14 +17,42 @@ viewports (e.g. resolution-change emulation) untouched.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 ---
+ src/wayland/meta-pointer-lock-wayland.c       |  9 ++-
  .../meta-wayland-pointer-constraints.c        |  7 +-
  src/wayland/meta-wayland-surface.c            | 72 +++++++++++++++++--
  src/wayland/meta-window-xwayland.c            |  6 +-
  src/wayland/meta-xwayland-surface.c           |  4 +-
  src/wayland/meta-xwayland.c                   | 40 +++++++++--
  src/wayland/meta-xwayland.h                   |  2 +
- 6 files changed, 116 insertions(+), 15 deletions(-)
+ 7 files changed, 123 insertions(+), 17 deletions(-)
 
+diff --git a/src/wayland/meta-pointer-lock-wayland.c b/src/wayland/meta-pointer-lock-wayland.c
+index 79b9aa8345..1bb69796a8 100644
+--- a/src/wayland/meta-pointer-lock-wayland.c
++++ b/src/wayland/meta-pointer-lock-wayland.c
+@@ -37,6 +37,8 @@
+ 
+ #include "backends/meta-backend-private.h"
+ #include "compositor/meta-surface-actor-wayland.h"
++#include "wayland/meta-wayland-private.h"
++#include "wayland/meta-xwayland.h"
+ 
+ struct _MetaPointerLockWayland
+ {
+@@ -53,8 +55,11 @@ maybe_scale_for_xwayland (MetaWaylandSurface *surface,
+ {
+   if (meta_wayland_surface_is_xwayland (surface))
+     {
+-      *x /= surface->applied_state.scale;
+-      *y /= surface->applied_state.scale;
++      float scale =
++        meta_xwayland_get_effective_scale (&surface->compositor->xwayland_manager);
++
++      *x /= scale;
++      *y /= scale;
+     }
+ }
+ 
 diff --git a/src/wayland/meta-wayland-pointer-constraints.c b/src/wayland/meta-wayland-pointer-constraints.c
 index 1438a80aaa..78ad732914 100644
 --- a/src/wayland/meta-wayland-pointer-constraints.c

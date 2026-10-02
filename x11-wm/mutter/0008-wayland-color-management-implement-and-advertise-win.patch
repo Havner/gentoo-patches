@@ -1,4 +1,4 @@
-From 0ab299d230eacc8672fb0bd74736754b60da8b5d Mon Sep 17 00:00:00 2001
+From b91168128f525f6786150cca9eb6fc88fbfeec06 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Tue, 22 Sep 2026 16:22:06 +0200
 Subject: [PATCH 8/8] wayland/color-management: implement and advertise
