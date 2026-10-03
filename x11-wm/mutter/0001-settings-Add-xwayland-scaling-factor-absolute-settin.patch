@@ -1,7 +1,7 @@
 From 2d4b4cfd175f2027e2730ae82cf9a36707fb7495 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 15:24:27 +0200
-Subject: [PATCH 1/8] settings: Add xwayland-scaling-factor-absolute setting
+Subject: [PATCH 1/9] settings: Add xwayland-scaling-factor-absolute setting
 
 Add a new boolean GSettings key that will make the Xwayland scaling
 factor absolute, i.e. independent of the overall desktop (monitor)

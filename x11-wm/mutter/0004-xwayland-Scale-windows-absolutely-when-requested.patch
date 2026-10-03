@@ -1,7 +1,7 @@
 From a79dc119079b6f8381f18eb18f3858dc5d8bf2f5 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 16:15:13 +0200
-Subject: [PATCH 4/8] xwayland: Scale windows absolutely when requested
+Subject: [PATCH 4/9] xwayland: Scale windows absolutely when requested
 
 In absolute mode compute the effective scale as
 highest_monitor_scale / factor, so that an X11 window's physical size is

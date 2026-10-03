@@ -1,7 +1,7 @@
 From a45536f7f89e842bfcbd9126a2c05ec6bc174421 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 15:39:22 +0200
-Subject: [PATCH 2/8] xwayland: Tell X11 clients scale is 100% in absolute mode
+Subject: [PATCH 2/9] xwayland: Tell X11 clients scale is 100% in absolute mode
 
 When xwayland-scaling-factor-absolute is enabled, always report a UI
 scaling factor of 1 to X11 clients so they don't scale themselves. The

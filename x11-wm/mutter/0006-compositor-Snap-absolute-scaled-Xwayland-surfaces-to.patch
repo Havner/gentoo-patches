@@ -1,7 +1,7 @@
 From 11d7eec4b956456bef16c3fd9c56c7ec4a4ccc09 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 20:12:24 +0200
-Subject: [PATCH 6/8] compositor: Snap absolute-scaled Xwayland surfaces to the
+Subject: [PATCH 6/9] compositor: Snap absolute-scaled Xwayland surfaces to the
  physical pixel grid
 
 In absolute Xwayland scaling mode a window renders at (a multiple of) its

@@ -1,7 +1,7 @@
 From 86d85295763736cf1f811f1b67f10f3d6cad7fb2 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sun, 20 Sep 2026 16:07:29 +0200
-Subject: [PATCH 3/8] xwayland: Make effective scale a float
+Subject: [PATCH 3/9] xwayland: Make effective scale a float
 
 Change meta_xwayland_get_effective_scale() to return a float and update
 all consumers to handle a fractional value with explicit rounding. This
