@@ -1,0 +1,140 @@
+diff -ruN a/kernel-module-source/src/nvidia-modeset/include/nvkms-types.h b/kernel-module-source/src/nvidia-modeset/include/nvkms-types.h
+--- a/kernel-module-source/src/nvidia-modeset/include/nvkms-types.h	2026-10-26 01:00:20.322423736 +0100
++++ b/kernel-module-source/src/nvidia-modeset/include/nvkms-types.h	2026-10-26 01:00:44.224190688 +0100
+@@ -1981,6 +1981,12 @@
+ 
+     NVDpyIdList vbiosDpyConfig[NVKMS_MAX_HEADS_PER_DISP];
+ 
++    /*
++     * Shared generic infoframe slot (index + 1, 0 = none yet) carrying the
++     * HDMI SPD infoframe on each head; see SendSPDInfoFrame().
++     */
++    NvU8 spdInfoFrameSlot[NVKMS_MAX_HEADS_PER_DISP];
++
+     NvU32             isoBandwidthKBPS;
+     NvU32             dramFloorKBPS;
+ 
+diff -ruN a/kernel-module-source/src/nvidia-modeset/src/nvkms-hdmi.c b/kernel-module-source/src/nvidia-modeset/src/nvkms-hdmi.c
+--- a/kernel-module-source/src/nvidia-modeset/src/nvkms-hdmi.c	2026-10-26 01:00:20.316456143 +0100
++++ b/kernel-module-source/src/nvidia-modeset/src/nvkms-hdmi.c	2026-10-26 01:00:44.224470126 +0100
+@@ -45,6 +45,7 @@
+ #include <ctrl/ctrl2080/ctrl2080unix.h> // NV2080_CTRL_OS_UNIX_AUDIO_DYNAMIC_POWER
+ 
+ #include <hdmipacket/nvhdmipkt.h>
++#include <class/clc770.h> // NVC770_DISPLAY
+ 
+ #define CAP_HDMI_SUPPORT_GPU             0x00000001
+ #define CAP_HDMI_SUPPORT_MONITOR         0x00000002
+@@ -561,6 +562,103 @@
+ 
+ 
+ /*
++ * SendSPDInfoFrame() - Send a Source Product Description InfoFrame naming the
++ * source "NVIDIA" / "GeForce", source type "PC general", as the Windows driver
++ * does.  Some sinks key behaviour off it: LG TVs use it to classify the input
++ * (PC mode, G-SYNC vs plain VRR).
++ *
++ * Ada only (NVC770_DISPLAY): Ada drives HDMI through the NVC6 HAL, which uses
++ * just the legacy AVI/VSI/generic packet slots, leaving the six per-head
++ * "shared generic" infoframe slots of the C771 SOR class unused.  A slot is
++ * acquired from RM once per head and kept; if RM refuses, the last slot is
++ * used.  The packet is laid out as the C771 shared generic registers expect:
++ * HB0-HB3, then PB0 (checksum) and the 25 payload bytes.
++ */
++#define SPD_SHARED_GENERIC_SLOTS          6
++#define SPD_SHARED_GENERIC_FALLBACK_SLOT  (SPD_SHARED_GENERIC_SLOTS - 1)
++
++static void SendSPDInfoFrame(const NVDispEvoRec *pDispEvo, const NvU32 head)
++{
++    /* The slot cache lives in the disp; everything else here is read-only. */
++    NVDispEvoRec *pDispEvoMutable = (NVDispEvoRec *)pDispEvo;
++    const NVDispHeadStateEvoRec *pHeadState = &pDispEvo->headState[head];
++    NVDevEvoPtr pDevEvo = pDispEvo->pDevEvo;
++    static const char vendor[] = "NVIDIA";
++    static const char product[] = "GeForce";
++    NvU8 packet[4 /* HB0-HB3 */ + 1 /* PB0 */ +
++                sizeof(NVT_SPD_INFOFRAME_PAYLOAD)] = { 0 };
++    NvU8 *pPayload = &packet[5];
++    NVHDMIPKT_RESULT ret;
++    NvU8 checksum = 0;
++    NvU32 slot, i;
++
++    if (pDevEvo->dispClass != NVC770_DISPLAY ||
++        head >= NVKMS_MAX_HEADS_PER_DISP) {
++        return;
++    }
++
++    if (pDispEvo->spdInfoFrameSlot[head] == 0) {
++        NV0073_CTRL_SPECIFIC_ACQUIRE_SHARED_GENERIC_PACKET_PARAMS params = { 0 };
++        NvU32 status;
++
++        params.subDeviceInstance = pDispEvo->displayOwner;
++        params.targetHeadIndex = head;
++
++        status = nvRmApiControl(nvEvoGlobal.clientHandle,
++                                pDevEvo->displayCommonHandle,
++                                NV0073_CTRL_CMD_SPECIFIC_ACQUIRE_SHARED_GENERIC_PACKET,
++                                &params,
++                                sizeof(params));
++
++        if (status == NVOS_STATUS_SUCCESS &&
++            params.infoframeIndex < SPD_SHARED_GENERIC_SLOTS) {
++            slot = params.infoframeIndex;
++            nvEvoLogDisp(pDispEvo, EVO_LOG_INFO,
++                         "HDMI SPD infoframe: head %u, shared generic slot %u",
++                         head, slot);
++        } else {
++            slot = SPD_SHARED_GENERIC_FALLBACK_SLOT;
++            nvEvoLogDisp(pDispEvo, EVO_LOG_WARN,
++                         "HDMI SPD infoframe: slot acquire failed (status 0x%x), "
++                         "head %u, using shared generic slot %u",
++                         status, head, slot);
++        }
++        pDispEvoMutable->spdInfoFrameSlot[head] = slot + 1;
++    }
++    slot = pDispEvo->spdInfoFrameSlot[head] - 1;
++
++    packet[0] = hdmi_pktType_SrcProdDescInfoFrame;    /* HB0: 0x83 */
++    packet[1] = 1;                                    /* HB1: version */
++    packet[2] = sizeof(NVT_SPD_INFOFRAME_PAYLOAD);    /* HB2: length, 25 */
++    packet[3] = 0;                                    /* HB3: reserved */
++
++    /* PB1-PB8 vendor, PB9-PB24 product: 7-bit ASCII, zero padded */
++    nvkms_memcpy(&pPayload[0], vendor, sizeof(vendor) - 1);
++    nvkms_memcpy(&pPayload[8], product, sizeof(product) - 1);
++    pPayload[24] = 0x09;                              /* PB25: PC general */
++
++    /* PB0: all header and payload bytes must sum to zero */
++    for (i = 0; i < sizeof(packet); i++) {
++        checksum += packet[i];
++    }
++    packet[4] = ~checksum + 1;
++
++    ret = NvHdmiPkt_PacketWrite(pDevEvo->hdmiLib.handle,
++                                pDispEvo->displayOwner,
++                                pHeadState->activeRmId,
++                                head,
++                                NVHDMIPKT_TYPE_SHARED_GENERIC1 + slot,
++                                NVHDMIPKT_TRANSMIT_CONTROL_ENABLE_EVERY_FRAME_SW_CHECKSUM,
++                                sizeof(packet),
++                                packet);
++
++    if (ret != NVHDMIPKT_SUCCESS) {
++        nvEvoLogDispDebug(pDispEvo, EVO_LOG_ERROR,
++                          "Error in sending SPD InfoFrame: %d", ret);
++    }
++}
++
++/*
+  * Send video and 3D InfoFrames for HDMI.
+  */
+ void nvUpdateHdmiInfoFrames(const NVDispEvoRec *pDispEvo,
+@@ -594,6 +692,8 @@
+     SendHDRInfoFrame(pDispEvo,
+                      head,
+                      &pDpyEvo->parsedEdid.info);
++
++    SendSPDInfoFrame(pDispEvo, head);
+ }
+ 
+ static void SetDpAudioMute(const NVDispEvoRec *pDispEvo,
