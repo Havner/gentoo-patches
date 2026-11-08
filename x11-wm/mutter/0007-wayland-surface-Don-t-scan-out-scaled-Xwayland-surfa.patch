@@ -1,8 +1,8 @@
 From 043aa41c9cf0a1219e4e619010a1d9295eebdb56 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Sat, 3 Oct 2026 03:03:45 +0200
-Subject: [PATCH 7/9] wayland/surface: Don't scan out scaled Xwayland surfaces
- with nearest scaling
+Subject: [PATCH 07/10] wayland/surface: Don't scan out scaled Xwayland
+ surfaces with nearest scaling
 
 When xwayland-scaling-nearest is enabled, Xwayland windows are magnified
 with nearest-neighbor filtering when composited. A fullscreen window can
@@ -68,5 +68,5 @@ index 6d1fd95e89..9e58f2a22d 100644
                                                    onscreen,
                                                    stage_view,
 -- 
-2.55.0
+2.56.0
 

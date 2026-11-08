@@ -1,7 +1,7 @@
 From 28e604fdf41e6fb0f85c2db4038e0f03c3a62b48 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Tue, 22 Sep 2026 16:20:31 +0200
-Subject: [PATCH 8/9] wayland/color-management: implement and advertise
+Subject: [PATCH 08/10] wayland/color-management: implement and advertise
  windows_scrgb
 
 Replace the create_windows_scrgb stub (which posted UNSUPPORTED_FEATURE)
@@ -84,5 +84,5 @@ index 555881369b..ef2b363b37 100644
                                                 WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22);
    wp_color_manager_v1_send_supported_tf_named (resource,
 -- 
-2.55.0
+2.56.0
 

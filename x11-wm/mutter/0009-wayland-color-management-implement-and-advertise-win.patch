@@ -1,7 +1,7 @@
 From ffd40b675f3a64099085da636659609a30739ec4 Mon Sep 17 00:00:00 2001
 From: Lukasz Pawelczyk <havner@gmail.com>
 Date: Tue, 22 Sep 2026 16:22:06 +0200
-Subject: [PATCH 9/9] wayland/color-management: implement and advertise
+Subject: [PATCH 09/10] wayland/color-management: implement and advertise
  windows_bt2100
 
 Add a create_windows_bt2100 handler that builds a Windows-BT2100 (HDR10)
@@ -117,5 +117,5 @@ index f17a642bc9..2546eddde8 100644
  #define META_WP_DRM_LEASE_DEVICE_V1_VERSION 1
  #define META_XDG_SESSION_MANAGER_V1_VERSION 1
 -- 
-2.55.0
+2.56.0
 
