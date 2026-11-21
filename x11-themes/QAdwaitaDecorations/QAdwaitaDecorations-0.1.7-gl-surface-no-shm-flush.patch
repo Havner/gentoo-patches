@@ -1,0 +1,27 @@
+diff -ruN a/src/qadwaitadecorations.cpp b/src/qadwaitadecorations.cpp
+--- a/src/qadwaitadecorations.cpp	2026-11-21 15:27:07.762940709 +0100
++++ b/src/qadwaitadecorations.cpp	2026-11-21 15:27:07.777361891 +0100
+@@ -776,8 +776,21 @@
+     }
+     // Force re-paint
+     // NOTE: not sure it's correct, but it's the only way to make it work
+-    if (waylandWindow()->backingStore()) {
+-        waylandWindow()->backingStore()->flush(window(), QRegion(), QPoint());
++    //
++    // Only do this for raster windows. QWaylandShmBackingStore::flush() is
++    // meant for RasterSurface windows only; for OpenGL/Vulkan windows (e.g. a
++    // QWidget window containing a QOpenGLWidget, which Qt composes via RHI)
++    // it attaches an shm buffer to the same wl_surface the EGL/Vulkan swapchain
++    // renders to. With NVIDIA's explicit sync (wp_linux_drm_syncobj_surface_v1)
++    // the compositor kills the client: "Explicit Sync only supported on dmabuf
++    // buffers". Non-raster windows repaint their decorations on the next
++    // swap, so just request an update like Qt's own adwaita plugin does.
++    if (window()->surfaceType() == QSurface::RasterSurface) {
++        if (waylandWindow()->backingStore()) {
++            waylandWindow()->backingStore()->flush(window(), QRegion(), QPoint());
++        }
++    } else {
++        window()->requestUpdate();
+     }
+ }
+ 

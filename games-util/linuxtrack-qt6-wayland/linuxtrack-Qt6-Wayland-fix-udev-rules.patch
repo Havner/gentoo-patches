@@ -1,0 +1,21 @@
+diff '--color=auto' -ur linuxtrack-Qt6-Wayland-1.4.10.orig/CMakeLists.txt linuxtrack-Qt6-Wayland-1.4.10/CMakeLists.txt
+--- linuxtrack-Qt6-Wayland-1.4.10.orig/CMakeLists.txt	2026-11-21 15:44:45.532580616 +0100
++++ linuxtrack-Qt6-Wayland-1.4.10/CMakeLists.txt	2026-11-21 15:47:07.504499089 +0100
+@@ -272,7 +272,7 @@
+             DESTINATION "${LINUXTRACK_SYSTEM_METAINFODIR}")
+ endif()
+ if(LINUXTRACK_INSTALL_STANDARD_INTEGRATION)
+-    install(FILES src/99-TIR.rules src/99-Mickey.rules
++    install(FILES src/99-TIR.rules
+             DESTINATION "${LINUXTRACK_SYSTEM_UDEV_RULES_DIR}")
+ endif()
+ 
+diff '--color=auto' -ur linuxtrack-Qt6-Wayland-1.4.10.orig/src/99-TIR.rules linuxtrack-Qt6-Wayland-1.4.10/src/99-TIR.rules
+--- linuxtrack-Qt6-Wayland-1.4.10.orig/src/99-TIR.rules	2026-11-21 15:44:45.644015410 +0100
++++ linuxtrack-Qt6-Wayland-1.4.10/src/99-TIR.rules	2026-11-21 15:46:22.946116308 +0100
+@@ -3,4 +3,4 @@
+ # MODE=0666 provides universal rw access; TAG+=uaccess delegates to
+ # systemd-logind for seat-aware permission grants.
+ # Using SUBSYSTEMS=="usb" and ATTRS is more robust for modern distros.
+-SUBSYSTEMS=="usb", ATTRS{idVendor}=="131d", ATTRS{idProduct}=="015[9ab]", GROUP="plugdev", MODE="0660", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
++SUBSYSTEMS=="usb", ATTRS{idVendor}=="131d", GROUP="plugdev", MODE="0660", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
